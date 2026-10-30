@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check,
   ChevronDown, ChevronLeft, ChevronRight, CircleHelp, ClipboardList, Clock3,
-  Download, FlaskConical, LayoutDashboard, Menu, Moon, MoreHorizontal, Plus,
-  Search, Settings, ShieldCheck, Sun, Users, Wallet, X,
+  Download, Droplet, FlaskConical, HeartPulse, LayoutDashboard, Mail, Menu,
+  Moon, MoreHorizontal, Phone, Plus, Search, Settings, ShieldCheck, Sun,
+  UserRound, Users, Wallet, X,
 } from "lucide-react";
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
@@ -14,6 +15,37 @@ import {
 type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
 type LabStatus = "Pending" | "Sample Collected" | "Completed";
 type PaymentStatus = "Paid" | "Unpaid" | "Due";
+
+type HospitalSettings = {
+  hospitalName: string;
+  username: string;
+  logoDataUrl: string;
+};
+
+const defaultHospitalSettings: HospitalSettings = {
+  hospitalName: "Careflow Hospital",
+  username: "Alex Morgan",
+  logoDataUrl: "",
+};
+const hospitalSettingsKey = "careflow-hospital-settings";
+
+function readHospitalSettings(): HospitalSettings {
+  try {
+    const stored = localStorage.getItem(hospitalSettingsKey);
+    if (!stored) return defaultHospitalSettings;
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object") return defaultHospitalSettings;
+    const values = parsed as Partial<HospitalSettings>;
+    return {
+      hospitalName: typeof values.hospitalName === "string" ? values.hospitalName : defaultHospitalSettings.hospitalName,
+      username: typeof values.username === "string" ? values.username : defaultHospitalSettings.username,
+      logoDataUrl: typeof values.logoDataUrl === "string" ? values.logoDataUrl : defaultHospitalSettings.logoDataUrl,
+    };
+  } catch (error) {
+    console.error("Unable to load hospital settings.", error);
+    return defaultHospitalSettings;
+  }
+}
 
 type LabOrder = {
   invoice: string;
@@ -25,6 +57,24 @@ type LabOrder = {
   status: LabStatus;
 };
 
+type PatientStatus = "In treatment" | "Admitted" | "Discharged" | "Scheduled";
+
+type PatientRecord = {
+  id: string;
+  name: string;
+  age: number;
+  gender: string;
+  phone: string;
+  email: string;
+  bloodGroup: string;
+  department: string;
+  doctor: string;
+  lastVisit: string;
+  status: PatientStatus;
+  diagnosis: string;
+  allergies: string;
+};
+
 const formatSeedDate = (daysAgo: number) => {
   const date = new Date();
   date.setDate(date.getDate() - daysAgo);
@@ -33,12 +83,24 @@ const formatSeedDate = (daysAgo: number) => {
 
 const navigation: { name: string; icon: typeof LayoutDashboard; items?: Page[] }[] = [
   { name: "Dashboard", icon: LayoutDashboard },
+  { name: "Patients & EMR", icon: Users },
   { name: "Outdoor (OPD)", icon: CalendarDays, items: ["Take New Appointment", "Doctor Scheduling"] },
   { name: "Lab Module", icon: FlaskConical, items: ["Take Lab Order", "Lab Order Records"] },
   { name: "Prescription", icon: ClipboardList },
   { name: "App Users", icon: Users },
   { name: "Master Data", icon: Settings },
-  { name: "More", icon: MoreHorizontal, items: ["Patients & EMR", "IPD & Bed Management", "Billing & Invoicing", "Pharmacy & Inventory", "Reports & Analytics", "Emergency & Casualty", "Radiology & Imaging", "Operation Theatre", "Nurse Station", "Blood Bank", "Ambulance & Transport", "HR & Payroll", "Accounts & Finance", "Notifications", "Patient Portal", "Queue Display", "Audit & Security", "Branches & Languages"] },
+  { name: "More", icon: MoreHorizontal, items: ["IPD & Bed Management", "Billing & Invoicing", "Pharmacy & Inventory", "Reports & Analytics", "Emergency & Casualty", "Radiology & Imaging", "Operation Theatre", "Nurse Station", "Blood Bank", "Ambulance & Transport", "HR & Payroll", "Accounts & Finance", "Notifications", "Patient Portal", "Queue Display", "Audit & Security", "Branches & Languages"] },
+];
+
+const initialPatients: PatientRecord[] = [
+  { id: "CF-10482", name: "Olivia Rhye", age: 32, gender: "Female", phone: "+1 202 555 0148", email: "olivia.rhye@example.com", bloodGroup: "O+", department: "Cardiology", doctor: "Dr. Sarah Chen", lastVisit: formatSeedDate(0), status: "In treatment", diagnosis: "Arrhythmia follow-up", allergies: "Penicillin" },
+  { id: "CF-10481", name: "Phoenix Baker", age: 45, gender: "Male", phone: "+1 202 555 0172", email: "phoenix.baker@example.com", bloodGroup: "A+", department: "General Medicine", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Admitted", diagnosis: "Post-operative observation", allergies: "No known allergies" },
+  { id: "CF-10480", name: "Lana Steiner", age: 28, gender: "Female", phone: "+1 202 555 0194", email: "lana.steiner@example.com", bloodGroup: "B+", department: "Neurology", doctor: "Dr. Aisha Patel", lastVisit: formatSeedDate(1), status: "Scheduled", diagnosis: "Migraine assessment", allergies: "No known allergies" },
+  { id: "CF-10479", name: "Demi Wilkinson", age: 51, gender: "Female", phone: "+1 202 555 0186", email: "demi.wilkinson@example.com", bloodGroup: "AB+", department: "Cardiology", doctor: "Dr. Sarah Chen", lastVisit: formatSeedDate(0), status: "Discharged", diagnosis: "Hypertension review", allergies: "Latex" },
+  { id: "CF-10478", name: "Candice Wu", age: 37, gender: "Female", phone: "+1 202 555 0129", email: "candice.wu@example.com", bloodGroup: "O-", department: "Pediatrics", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(2), status: "In treatment", diagnosis: "Routine wellness visit", allergies: "No known allergies" },
+  { id: "CF-10477", name: "Natali Craig", age: 63, gender: "Female", phone: "+1 202 555 0163", email: "natali.craig@example.com", bloodGroup: "A-", department: "General Medicine", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Admitted", diagnosis: "Type 2 diabetes management", allergies: "Sulfa drugs" },
+  { id: "CF-10476", name: "Drew Cano", age: 40, gender: "Male", phone: "+1 202 555 0135", email: "drew.cano@example.com", bloodGroup: "B-", department: "Neurology", doctor: "Dr. Aisha Patel", lastVisit: formatSeedDate(3), status: "Discharged", diagnosis: "Peripheral neuropathy review", allergies: "No known allergies" },
+  { id: "CF-10475", name: "Andi Lane", age: 24, gender: "Non-binary", phone: "+1 202 555 0191", email: "andi.lane@example.com", bloodGroup: "O+", department: "Pediatrics", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Scheduled", diagnosis: "Preventive health visit", allergies: "Peanuts" },
 ];
 
 const initialOrders: LabOrder[] = [
@@ -81,16 +143,21 @@ const doctors = [
 
 const today = new Date();
 const todayInput = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-const formattedToday = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(today);
 const shortToday = new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric" }).format(today);
 const money = (amount: number) => `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const getInitials = (name: string) => name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "AM";
+const formatSelectedDate = (value: string) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 
 function App() {
   const [page, setPage] = useState<Page>("Dashboard");
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
+  const [hospitalSettings, setHospitalSettings] = useState(readHospitalSettings);
+  const [selectedDate, setSelectedDate] = useState(todayInput);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
   const [orders, setOrders] = useState(initialOrders);
+  const [patients] = useState(initialPatients);
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [selectedRange, setSelectedRange] = useState("This week");
@@ -110,80 +177,95 @@ function App() {
     changePage("Lab Order Records");
     showNotice("Lab order created successfully");
   };
+  const saveHospitalSettings = (settings: HospitalSettings) => {
+    try {
+      localStorage.setItem(hospitalSettingsKey, JSON.stringify(settings));
+      setHospitalSettings(settings);
+      showNotice("Hospital settings saved");
+    } catch (error) {
+      console.error("Unable to save hospital settings.", error);
+      showNotice("Settings could not be saved. Check browser storage and try again.");
+    }
+  };
 
   return (
     <div className={`app-shell${dark ? " dark" : ""}`}>
-      <header className="topbar">
-        <button className="mobile-menu icon-button" aria-label="Toggle navigation" onClick={() => setMobileNav((value) => !value)}><Menu size={19} /></button>
-        <button className="brand" onClick={() => changePage("Dashboard")} aria-label="Careflow home">
-          <span className="brand-mark"><Activity size={19} strokeWidth={2.6} /></span>
-          <span>careflow<span className="brand-period">.</span></span>
+      <aside className={`sidebar${mobileNav ? " nav-open" : ""}`}>
+        <button className="brand" onClick={() => changePage("Dashboard")} aria-label={`${hospitalSettings.hospitalName} home`}>
+          <span className="brand-mark">{hospitalSettings.logoDataUrl ? <img src={hospitalSettings.logoDataUrl} alt="" /> : <Activity size={20} strokeWidth={2.6} />}</span>
+          <span className="brand-name">{hospitalSettings.hospitalName}</span>
         </button>
-        <div className="topbar-actions">
-          <label className="searchbox">
-            <Search size={16} />
-            <input aria-label="Search patients, invoices, or records" placeholder="Search anything..." value={search} onChange={(event) => setSearch(event.target.value)} />
-            <kbd>⌘ K</kbd>
-          </label>
-          <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button>
-          <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={18} /><i /></button>
-          <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={18} /></button>
-          <button className="profile-button" onClick={() => showNotice("Signed in as Alex Morgan · Administrator")}>
-            <span className="avatar">AM</span><span className="profile-copy"><b>Alex Morgan</b><small>Administrator</small></span><ChevronDown size={15} />
-          </button>
-        </div>
-      </header>
+        <nav className="nav-wrap" aria-label="Main navigation">
+          <span className="sidebar-label">WORKSPACE</span>
+          <div className="nav-pills">
+            {navigation.map((item) => {
+              const active = item.name === "Dashboard" ? page === "Dashboard" : item.items?.includes(page) || item.name === page;
+              return item.items ? (
+                <div className="nav-dropdown" key={item.name}>
+                  <button className={`nav-pill${active ? " active" : ""}`} onClick={() => setOpenMenu(openMenu === item.name ? null : item.name)} aria-expanded={openMenu === item.name}>
+                    <item.icon size={18} /><span>{item.name}</span><ChevronDown size={15} className="nav-chevron" />
+                  </button>
+                  <AnimatePresence>
+                    {openMenu === item.name && <motion.div className="dropdown-menu" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 7 }}>
+                      {item.items.map((subitem) => <button key={subitem} onClick={() => changePage(subitem)} className={page === subitem ? "selected" : ""}>{subitem}</button>)}
+                    </motion.div>}
+                  </AnimatePresence>
+                </div>
+              ) : (
+                <button key={item.name} className={`nav-pill${active ? " active" : ""}`} onClick={() => changePage(item.name as Page)}><item.icon size={18} /><span>{item.name}</span></button>
+              );
+            })}
+          </div>
+        </nav>
+        <div className="sidebar-security"><ShieldCheck size={17} /><span><b>Secure workspace</b><small>Patient data protected</small></span><i /></div>
+      </aside>
 
-      <section className="hero-head">
-        <div className="dna-art" aria-hidden="true">
-          <svg viewBox="0 0 640 220" fill="none">
-            <path d="M56 12C300 44 330 176 584 208M56 208C300 176 330 44 584 12" stroke="url(#dna)" strokeWidth="2" />
-            <path d="M117 25L117 195M176 44L176 176M237 67L237 153M297 91L297 129M358 91L358 129M419 67L419 153M480 44L480 176M539 25L539 195" stroke="url(#dna)" strokeWidth="1.5" />
-            <defs><linearGradient id="dna" x1="56" y1="110" x2="584" y2="110" gradientUnits="userSpaceOnUse"><stop stopColor="#79C1FF" /><stop offset="1" stopColor="#D3ACF5" /></linearGradient></defs>
-          </svg>
-        </div>
-        <div className="hero-title">
-          <span className="eyebrow"><span className="live-dot" /> HOSPITAL MANAGEMENT PLATFORM</span>
-          <h1>{page === "Dashboard" ? "Good morning, Alex" : page}</h1>
-          <p>{page === "Dashboard" ? "Hi, Alex! Welcome back. Here's what's happening at your hospital today." : pageDescription(page)}</p>
-        </div>
-        <div className="date-chip"><CalendarDays size={15} /><span>{formattedToday}</span><ChevronDown size={14} /></div>
-      </section>
+      <div className="app-workspace">
+        <header className="topbar">
+          <button className="mobile-menu icon-button" aria-label="Toggle navigation" onClick={() => setMobileNav((value) => !value)}><Menu size={20} /></button>
+          <div className="topbar-context"><span className="live-dot" /> {hospitalSettings.hospitalName}</div>
+          <div className="topbar-actions">
+            <label className="searchbox">
+              <Search size={17} />
+              <input aria-label="Search patients, invoices, or records" placeholder="Search patients, records..." value={search} onChange={(event) => setSearch(event.target.value)} />
+              <kbd>⌘ K</kbd>
+            </label>
+            <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
+            <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={19} /><i /></button>
+            <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={19} /></button>
+            <button className="profile-button" onClick={() => showNotice(`Signed in as ${hospitalSettings.username} · Administrator`)}>
+              <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Administrator</small></span><ChevronDown size={15} />
+            </button>
+          </div>
+        </header>
 
-      <nav className={`nav-wrap${mobileNav ? " nav-open" : ""}`} aria-label="Main navigation">
-        <div className="nav-pills">
-          {navigation.map((item) => {
-            const active = item.name === "Dashboard" ? page === "Dashboard" : item.items?.includes(page) || item.name === page;
-            return item.items ? (
-              <div className="nav-dropdown" key={item.name}>
-                <button className={`nav-pill${active ? " active" : ""}`} onClick={() => setOpenMenu(openMenu === item.name ? null : item.name)} aria-expanded={openMenu === item.name}>
-                  <item.icon size={16} /><span>{item.name}</span><ChevronDown size={13} />
-                </button>
-                <AnimatePresence>
-                  {openMenu === item.name && <motion.div className="dropdown-menu" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 7 }}>
-                    {item.items.map((subitem) => <button key={subitem} onClick={() => changePage(subitem)} className={page === subitem ? "selected" : ""}>{subitem}</button>)}
-                  </motion.div>}
-                </AnimatePresence>
-              </div>
-            ) : (
-              <button key={item.name} className={`nav-pill${active ? " active" : ""}`} onClick={() => changePage(item.name as Page)}><item.icon size={16} /><span>{item.name}</span></button>
-            );
-          })}
-        </div>
-      </nav>
+        <section className="hero-head">
+          <div className="hero-title">
+            <span className="eyebrow"><span className="live-dot" /> HOSPITAL MANAGEMENT PLATFORM</span>
+            <h1>{page === "Dashboard" ? `Good morning, ${hospitalSettings.username.trim().split(/\s+/)[0] || "there"}` : page}</h1>
+            <p>{page === "Dashboard" ? "Here's what's happening at your hospital today." : pageDescription(page)}</p>
+          </div>
+          <div className="date-control">
+            <button className="date-chip" aria-label={`Select date, currently ${formatSelectedDate(selectedDate)}`} aria-expanded={datePickerOpen} onClick={() => setDatePickerOpen((open) => !open)}><CalendarDays size={17} /><span>{formatSelectedDate(selectedDate)}</span><ChevronDown size={14} /></button>
+            {datePickerOpen && <div className="date-picker-popover"><label htmlFor="dashboard-date">Select date</label><input id="dashboard-date" type="date" required value={selectedDate} onChange={(event) => { if (!event.target.value) return; setSelectedDate(event.target.value); setDatePickerOpen(false); }} /><button type="button" onClick={() => { setSelectedDate(todayInput); setDatePickerOpen(false); }}>Today</button></div>}
+          </div>
+        </section>
 
-      <main className="main-content">
+        <main className="main-content">
         <AnimatePresence mode="wait">
           <motion.div key={page} className="page-transition" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
             {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} />}
+            {page === "Patients & EMR" && <PatientDirectory patients={patients} onNewAppointment={() => changePage("Take New Appointment")} />}
             {page === "Take New Appointment" && <AppointmentPage onSubmit={() => { showNotice("Appointment confirmed and token assigned"); changePage("Dashboard"); }} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} setOrders={setOrders} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
-            {!["Dashboard", "Take New Appointment", "Take Lab Order", "Lab Order Records"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
+            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} />}
+            {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
         </AnimatePresence>
-      </main>
-      <footer className="footer"><span>© {today.getFullYear()} Careflow Health Systems</span><span><ShieldCheck size={14} /> Your patient data is secure and encrypted</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={14} /></button></footer>
+        </main>
+        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> Your patient data is secure and encrypted</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
+      </div>
       <AnimatePresence>{notice && <motion.div className="toast" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}><span className="toast-check"><Check size={15} /></span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}</AnimatePresence>
     </div>
   );
@@ -196,7 +278,7 @@ function pageDescription(page: Page) {
     "Lab Order Records": "Track diagnostic orders, sample status, and outstanding payments.",
     "Prescription": "Create, review, and manage patient prescriptions.",
     "App Users": "Manage staff accounts, roles, and module permissions.",
-    "Master Data": "Configure the departments, services, and clinical settings for your hospital.",
+    "Master Data": "Update your hospital name, administrator profile, and logo.",
     "Patients & EMR": "Patient profiles, medical history, allergies, and visit timelines.",
     "Doctor Scheduling": "Plan doctor shifts, appointments, and availability.",
     "IPD & Bed Management": "Manage admissions, ward capacity, transfers, and bed status.",
@@ -231,7 +313,7 @@ function DashboardPage({ range, setRange, changePage, orders }: { range: string;
       <button className="button button-outline" onClick={() => window.print()}><Download size={16} /> Export report</button>
     </div>
     <div className="stats-grid">
-      <StatCard title="Patients today" value="248" change="+12.8%" trend="up" icon={<Users size={18} />} color="blue" detail={<><span>Admissions <b>18</b></span><span>In treatment <b>146</b></span><span>Discharged <b>24</b></span></>} />
+      <StatCard title="Patients today" value="248" change="+12.8%" trend="up" icon={<Users size={18} />} color="blue" detail={<><span>Admissions <b>18</b></span><span>In treatment <b>146</b></span><span>Discharged <b>24</b></span></>} action={{ label: "View patient records", onClick: () => changePage("Patients & EMR") }} />
       <StatCard title="Collection today" value="$12,840" change="+8.2%" trend="up" icon={<Wallet size={18} />} color="purple" detail={<><span>Clinic <b>$8,240</b></span><span>Laboratory <b>$4,600</b></span><span>Total collected <b>$12,840</b></span></>} />
       <StatCard title="Expense today" value="$4,280" change="-3.1%" trend="down" icon={<Activity size={18} />} color="orange" detail={<><span>This month <b>$86,420</b></span><span>Last month <b>$91,280</b></span><span>Budget used <b>68%</b></span></>} />
       <StatCard title="Due not collected" value="$2,460" change="12 invoices" trend="neutral" icon={<ClipboardList size={18} />} color="rose" detail={<><span>Over 30 days <b>$640</b></span><span>Due this week <b>$1,180</b></span><span>Open invoices <b>12</b></span></>} />
@@ -264,16 +346,80 @@ function DashboardPage({ range, setRange, changePage, orders }: { range: string;
         <button className="button button-light full-button" onClick={() => changePage("Take Lab Order")}><Plus size={16} /> Create lab order</button>
       </section>
     </div>
-    <div className="quick-actions"><span>Quick actions</span><button onClick={() => changePage("Take New Appointment")}><CalendarDays size={15} /> New appointment</button><button onClick={() => changePage("Take Lab Order")}><FlaskConical size={15} /> Take lab order</button><button onClick={() => changePage("Patients & EMR")}><Users size={15} /> Register patient</button></div>
+    <div className="quick-actions"><span>Quick actions</span><button onClick={() => changePage("Take New Appointment")}><CalendarDays size={15} /> New appointment</button><button onClick={() => changePage("Take Lab Order")}><FlaskConical size={15} /> Take lab order</button><button onClick={() => changePage("Patients & EMR")}><Users size={15} /> Browse patients</button></div>
   </>;
 }
 
-function StatCard({ title, value, change, trend, icon, color, detail }: { title: string; value: string; change: string; trend: "up" | "down" | "neutral"; icon: React.ReactNode; color: string; detail: React.ReactNode }) {
+function StatCard({ title, value, change, trend, icon, color, detail, action }: { title: string; value: string; change: string; trend: "up" | "down" | "neutral"; icon: React.ReactNode; color: string; detail: React.ReactNode; action?: { label: string; onClick: () => void } }) {
   return <motion.section className="panel stat-card" whileHover={{ y: -2 }} transition={{ duration: 0.18 }}>
     <div className="stat-top"><span className={`stat-icon ${color}`}>{icon}</span><span className={`trend ${trend}`}>{trend === "up" ? <ArrowUpRight size={13} /> : trend === "down" ? <ArrowDownRight size={13} /> : null}{change}</span></div>
     <div className="stat-value">{value}</div><div className="stat-title">{title}</div>
     <div className="stat-details">{detail}</div>
+    {action && <button className="stat-action" onClick={action.onClick}>{action.label}<ChevronRight size={13} /></button>}
   </motion.section>;
+}
+
+function PatientDirectory({ patients, onNewAppointment }: { patients: PatientRecord[]; onNewAppointment: () => void }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All patients");
+  const [selectedId, setSelectedId] = useState(patients[0]?.id ?? "");
+  const seenToday = patients.filter((patient) => patient.lastVisit === formatSeedDate(0)).length;
+  const admitted = patients.filter((patient) => patient.status === "Admitted").length;
+  const inTreatment = patients.filter((patient) => patient.status === "In treatment").length;
+  const filteredPatients = patients.filter((patient) => {
+    const matchesQuery = `${patient.id} ${patient.name} ${patient.phone} ${patient.department}`.toLowerCase().includes(query.trim().toLowerCase());
+    return matchesQuery && (statusFilter === "All patients" || patient.status === statusFilter);
+  });
+  const selectedPatient = filteredPatients.find((patient) => patient.id === selectedId) ?? filteredPatients[0];
+
+  return <div className="patient-directory">
+    <div className="dashboard-heading">
+      <div><h2>Patient directory</h2><p>Search patient records and review their care details.</p></div>
+      <button className="button button-primary" onClick={onNewAppointment}><Plus size={16} /> New appointment</button>
+    </div>
+    <div className="patient-kpis">
+      <section className="panel patient-kpi"><span className="stat-icon blue"><Users size={17} /></span><div><b>{patients.length}</b><span>Total demo records</span></div></section>
+      <section className="panel patient-kpi"><span className="stat-icon purple"><CalendarDays size={17} /></span><div><b>{seenToday}</b><span>Seen today</span></div></section>
+      <section className="panel patient-kpi"><span className="stat-icon orange"><HeartPulse size={17} /></span><div><b>{inTreatment}</b><span>In treatment</span></div></section>
+      <section className="panel patient-kpi"><span className="stat-icon green"><BedDouble size={17} /></span><div><b>{admitted}</b><span>Currently admitted</span></div></section>
+    </div>
+    <div className="patient-workspace">
+      <section className="panel patient-list-panel">
+        <div className="patient-list-heading"><div><h3>All patients</h3><span>{filteredPatients.length} records</span></div><div className="patient-controls">
+          <label className="search-input patient-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, ID, phone..." aria-label="Search patients" /></label>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter patients by status">
+            <option>All patients</option><option>In treatment</option><option>Admitted</option><option>Discharged</option><option>Scheduled</option>
+          </select>
+        </div></div>
+        <div className="patient-table">
+          <div className="patient-table-header"><span>Patient</span><span>Department</span><span>Last visit</span><span>Status</span></div>
+          {filteredPatients.map((patient) => <button className={`patient-row${selectedId === patient.id ? " selected" : ""}`} key={patient.id} onClick={() => setSelectedId(patient.id)} aria-pressed={selectedId === patient.id}>
+            <span className="patient-cell"><span className="patient-avatar">{patient.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span><b>{patient.name}</b><small>{patient.id} · {patient.age} yrs, {patient.gender}</small></span></span>
+            <span className="patient-department">{patient.department}</span><span className="patient-last-visit">{patient.lastVisit}</span><span><StatusBadge value={patient.status} /></span>
+          </button>)}
+          {filteredPatients.length === 0 && <div className="patient-empty"><Users size={22} /><b>No patients found</b><span>Try another name, ID, phone number, or status.</span></div>}
+        </div>
+      </section>
+      <aside className="panel patient-detail-panel">
+        {selectedPatient ? <>
+          <div className="patient-detail-top"><span className="patient-detail-avatar">{selectedPatient.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span className="patient-record-id">{selectedPatient.id}</span></div>
+          <h3>{selectedPatient.name}</h3><p className="patient-demographic">{selectedPatient.age} years · {selectedPatient.gender}</p>
+          <StatusBadge value={selectedPatient.status} />
+          <div className="patient-detail-separator" />
+          <h4>Patient details</h4>
+          <div className="patient-detail-list">
+            <div><Phone size={15} /><span><small>Phone</small><b>{selectedPatient.phone}</b></span></div>
+            <div><Mail size={15} /><span><small>Email</small><b>{selectedPatient.email}</b></span></div>
+            <div><Droplet size={15} /><span><small>Blood group</small><b>{selectedPatient.bloodGroup}</b></span></div>
+            <div><HeartPulse size={15} /><span><small>Department</small><b>{selectedPatient.department}</b></span></div>
+            <div><UserRound size={15} /><span><small>Attending doctor</small><b>{selectedPatient.doctor}</b></span></div>
+          </div>
+          <div className="patient-clinical-note"><small>Visit note · {selectedPatient.lastVisit}</small><b>{selectedPatient.diagnosis}</b><span>Allergies: {selectedPatient.allergies}</span></div>
+        </> : <div className="patient-empty"><Users size={22} /><b>Select a patient</b><span>Patient details will appear here.</span></div>}
+      </aside>
+    </div>
+    <p className="patient-demo-note"><ShieldCheck size={14} /> Demo patient information only. Connect a secured backend before entering real patient data.</p>
+  </div>;
 }
 
 function AppointmentPage({ onSubmit }: { onSubmit: () => void }) {
@@ -436,9 +582,67 @@ function LabRecordsPage({ orders, setOrders, search, setSearch, showNotice, chan
   </>;
 }
 
-function StatusBadge({ value }: { value: PaymentStatus | LabStatus }) {
+function StatusBadge({ value }: { value: PaymentStatus | LabStatus | PatientStatus }) {
   const className = value.toLowerCase().replace(/ /g, "-");
   return <span className={`status-badge ${className}`}><i />{value}</span>;
+}
+
+function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: HospitalSettings; onSave: (settings: HospitalSettings) => void; showNotice: (message: string) => void }) {
+  const [form, setForm] = useState(settings);
+  const updateField = (field: "hospitalName" | "username", value: string) => setForm((current) => ({ ...current, [field]: value }));
+  const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showNotice("Choose an image file for the hospital logo.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      showNotice("Choose a logo image smaller than 1 MB.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl !== "string") {
+        showNotice("The selected logo could not be read.");
+        return;
+      }
+      setForm((current) => ({ ...current, logoDataUrl: dataUrl }));
+    };
+    reader.onerror = () => showNotice("The selected logo could not be read.");
+    reader.readAsDataURL(file);
+  };
+  const save = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const updatedSettings = { ...form, hospitalName: form.hospitalName.trim(), username: form.username.trim() };
+    setForm(updatedSettings);
+    onSave(updatedSettings);
+  };
+
+  return <div className="settings-page">
+    <div className="dashboard-heading">
+      <div><h2>Hospital settings</h2><p>Personalize your workspace with your hospital details and logo.</p></div>
+    </div>
+    <form className="panel settings-panel" onSubmit={save}>
+      <div className="settings-section-heading"><span className="stat-icon blue"><Settings size={19} /></span><div><h3>Workspace identity</h3><p>These details appear across your hospital dashboard.</p></div></div>
+      <div className="settings-fields">
+        <label className="settings-field"><span>Hospital name</span><input required maxLength={80} value={form.hospitalName} onChange={(event) => updateField("hospitalName", event.target.value)} placeholder="Enter hospital name" /></label>
+        <label className="settings-field"><span>Username</span><input required maxLength={60} value={form.username} onChange={(event) => updateField("username", event.target.value)} placeholder="Enter your name" /></label>
+      </div>
+      <div className="settings-logo-section">
+        <div className="settings-section-heading"><span className="stat-icon green"><Activity size={19} /></span><div><h3>Hospital logo</h3><p>Upload a square image for the navigation bar. PNG, JPG, or SVG up to 1 MB.</p></div></div>
+        <div className="settings-logo-control">
+          <div className="settings-logo-preview">{form.logoDataUrl ? <img src={form.logoDataUrl} alt="Hospital logo preview" /> : <Activity size={27} />}</div>
+          <label className="button button-outline settings-upload">Choose image<input type="file" accept="image/*" onChange={handleLogoChange} /></label>
+          {form.logoDataUrl && <button className="settings-remove-logo" type="button" onClick={() => setForm((current) => ({ ...current, logoDataUrl: "" }))}>Remove logo</button>}
+        </div>
+      </div>
+      <div className="settings-actions"><span>Your changes are saved in this browser.</span><button className="button button-primary" type="submit"><Check size={17} /> Save settings</button></div>
+    </form>
+  </div>;
 }
 
 function ModulePage({ page, changePage, showNotice }: { page: Page; changePage: (page: Page) => void; showNotice: (message: string) => void }) {
