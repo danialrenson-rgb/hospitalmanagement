@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check,
   ChevronDown, ChevronLeft, ChevronRight, CircleHelp, ClipboardList, Clock3,
   Download, Droplet, FlaskConical, HeartPulse, LayoutDashboard, Mail, Menu,
-  Moon, MoreHorizontal, Phone, Plus, Search, Settings, ShieldCheck, Sun,
+  LogOut, Moon, MoreHorizontal, Phone, Plus, Search, Settings, ShieldCheck, Sun,
   UserRound, Users, Wallet, X,
 } from "lucide-react";
+import type { Session } from "@supabase/supabase-js";
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
+import type { Database } from "./database.types";
+import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
 type LabStatus = "Pending" | "Sample Collected" | "Completed";
@@ -148,19 +151,291 @@ const money = (amount: number) => `$${amount.toLocaleString("en-US", { minimumFr
 const getInitials = (name: string) => name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "AM";
 const formatSelectedDate = (value: string) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 
+type PatientRow = Database["public"]["Tables"]["patients"]["Row"];
+type LabOrderRow = Database["public"]["Tables"]["lab_orders"]["Row"];
+type SettingsRow = Database["public"]["Tables"]["hospital_settings"]["Row"];
+
+function isPatientStatus(value: string): value is PatientStatus {
+  return value === "In treatment" || value === "Admitted" || value === "Discharged" || value === "Scheduled";
+}
+
+function isLabStatus(value: string): value is LabStatus {
+  return value === "Pending" || value === "Sample Collected" || value === "Completed";
+}
+
+function isPaymentStatus(value: string): value is PaymentStatus {
+  return value === "Paid" || value === "Unpaid" || value === "Due";
+}
+
+function toPatientRecord(row: PatientRow): PatientRecord {
+  if (!isPatientStatus(row.status)) throw new Error(`Unknown patient status "${row.status}" in Supabase.`);
+  return {
+    id: row.id,
+    name: row.name,
+    age: row.age,
+    gender: row.gender,
+    phone: row.phone,
+    email: row.email,
+    bloodGroup: row.blood_group,
+    department: row.department,
+    doctor: row.doctor,
+    lastVisit: row.last_visit,
+    status: row.status,
+    diagnosis: row.diagnosis,
+    allergies: row.allergies,
+  };
+}
+
+function toLabOrder(row: LabOrderRow): LabOrder {
+  if (!isLabStatus(row.status)) throw new Error(`Unknown lab order status "${row.status}" in Supabase.`);
+  if (!isPaymentStatus(row.payment)) throw new Error(`Unknown payment status "${row.payment}" in Supabase.`);
+  return {
+    invoice: row.invoice,
+    date: row.date,
+    patient: row.patient,
+    phone: row.phone,
+    total: Number(row.total),
+    payment: row.payment,
+    status: row.status,
+  };
+}
+
+function toSettings(row: SettingsRow): HospitalSettings {
+  return {
+    hospitalName: row.hospital_name,
+    username: row.username,
+    logoDataUrl: row.logo_data_url,
+  };
+}
+
+function describeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function loadWorkspaceData(userId: string) {
+  const client = getSupabaseClient();
+  const [settingsResponse, patientsResponse, ordersResponse] = await Promise.all([
+    client.from("hospital_settings").select("*").maybeSingle(),
+    client.from("patients").select("*").order("id", { ascending: false }),
+    client.from("lab_orders").select("*").order("created_at", { ascending: false }),
+  ]);
+  if (settingsResponse.error) throw settingsResponse.error;
+  if (patientsResponse.error) throw patientsResponse.error;
+  if (ordersResponse.error) throw ordersResponse.error;
+
+  let settings = settingsResponse.data;
+  if (!settings) {
+    const defaults = readHospitalSettings();
+    const { data, error } = await client.from("hospital_settings").insert({
+      user_id: userId,
+      hospital_name: defaults.hospitalName,
+      username: defaults.username,
+      logo_data_url: defaults.logoDataUrl,
+    }).select("*").single();
+    if (error) {
+      if (error.code !== "23505") throw error;
+      const { data: existing, error: reloadError } = await client.from("hospital_settings").select("*").single();
+      if (reloadError) throw reloadError;
+      settings = existing;
+    } else {
+      settings = data;
+    }
+  }
+
+  let patientRows = patientsResponse.data;
+  if (patientRows.length === 0) {
+    const { data, error } = await client.from("patients").insert(initialPatients.map((patient) => ({
+      id: patient.id,
+      owner_id: userId,
+      name: patient.name,
+      age: patient.age,
+      gender: patient.gender,
+      phone: patient.phone,
+      email: patient.email,
+      blood_group: patient.bloodGroup,
+      department: patient.department,
+      doctor: patient.doctor,
+      last_visit: patient.lastVisit,
+      status: patient.status,
+      diagnosis: patient.diagnosis,
+      allergies: patient.allergies,
+    }))).select("*");
+    if (error) {
+      if (error.code !== "23505") throw error;
+      const { data: existing, error: reloadError } = await client.from("patients").select("*").order("id", { ascending: false });
+      if (reloadError) throw reloadError;
+      patientRows = existing;
+    } else {
+      patientRows = data;
+    }
+  }
+
+  let orderRows = ordersResponse.data;
+  if (orderRows.length === 0) {
+    const { data, error } = await client.from("lab_orders").insert(initialOrders.map((order) => ({
+      invoice: order.invoice,
+      owner_id: userId,
+      date: order.date,
+      patient: order.patient,
+      phone: order.phone,
+      total: order.total,
+      payment: order.payment,
+      status: order.status,
+    }))).select("*");
+    if (error) {
+      if (error.code !== "23505") throw error;
+      const { data: existing, error: reloadError } = await client.from("lab_orders").select("*").order("created_at", { ascending: false });
+      if (reloadError) throw reloadError;
+      orderRows = existing;
+    } else {
+      orderRows = data;
+    }
+  }
+
+  return {
+    settings: toSettings(settings),
+    patients: patientRows.map(toPatientRecord),
+    orders: orderRows.map(toLabOrder),
+  };
+}
+
 function App() {
+  if (!isSupabaseConfigured) return <ConnectionSetup />;
+  return <AuthenticationGate />;
+}
+
+function ConnectionSetup() {
+  return <AccessPage title="Finish Supabase setup" message="Set VITE_SUPABASE_ANON_KEY in your local .env.local file using the project's publishable/anon key, then restart the dev server. Never put the PostgreSQL password or service-role key in this browser app." />;
+}
+
+function AccessPage({ title, message, children }: { title: string; message: string; children?: React.ReactNode }) {
+  return <div className="access-page"><section className="access-card">
+    <span className="access-mark"><Activity size={21} /></span>
+    <h1>{title}</h1>
+    <p>{message}</p>
+    {children}
+  </section></div>;
+}
+
+function AuthenticationGate() {
+  const client = getSupabaseClient();
+  const [session, setSession] = useState<Session | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setReady(true);
+      setError("");
+    });
+    client.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return;
+      if (sessionError) setError(sessionError.message);
+      else setSession(data.session);
+      setReady(true);
+    }).catch((sessionError: unknown) => {
+      if (!active) return;
+      setError(describeError(sessionError));
+      setReady(true);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [client]);
+
+  if (!ready) return <AccessPage title="Connecting to Supabase" message="Checking your secure sign-in session…" />;
+  if (error) return <AccessPage title="Could not check your session" message={error}>
+    <button className="button button-primary access-submit" onClick={() => window.location.reload()}>Try again</button>
+  </AccessPage>;
+  if (!session) return <AuthenticationPage />;
+  return <HospitalWorkspace key={session.user.id} userId={session.user.id} onSignOut={async () => {
+    const { error: signOutError } = await client.auth.signOut();
+    if (signOutError) throw signOutError;
+  }} />;
+}
+
+function AuthenticationPage() {
+  const client = getSupabaseClient();
+  const [mode, setMode] = useState<"signIn" | "signUp">("signIn");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      if (mode === "signIn") {
+        const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+      } else {
+        const { data, error: signUpError } = await client.auth.signUp({ email, password });
+        if (signUpError) throw signUpError;
+        if (!data.session) setMessage("Account created. Check your email to confirm the address, then sign in.");
+      }
+    } catch (submitError) {
+      setError(describeError(submitError));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return <AccessPage title="Careflow Hospital" message="Sign in to securely access your hospital workspace.">
+    <form className="access-form" onSubmit={submit}>
+      <label>Email address<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+      <label>Password<input type="password" autoComplete={mode === "signIn" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+      {error && <p className="access-error" role="alert">{error}</p>}
+      {message && <p className="access-message" role="status">{message}</p>}
+      <button className="button button-primary access-submit" disabled={pending}>{pending ? "Please wait…" : mode === "signIn" ? "Sign in" : "Create account"}</button>
+    </form>
+    <button className="access-switch" onClick={() => { setMode((current) => current === "signIn" ? "signUp" : "signIn"); setError(""); setMessage(""); }}>
+      {mode === "signIn" ? "New to Careflow? Create an account" : "Already have an account? Sign in"}
+    </button>
+  </AccessPage>;
+}
+
+function HospitalWorkspace({ userId, onSignOut }: { userId: string; onSignOut: () => Promise<void> }) {
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
-  const [hospitalSettings, setHospitalSettings] = useState(readHospitalSettings);
+  const [hospitalSettings, setHospitalSettings] = useState(defaultHospitalSettings);
   const [selectedDate, setSelectedDate] = useState(todayInput);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
-  const [orders, setOrders] = useState(initialOrders);
-  const [patients] = useState(initialPatients);
+  const [orders, setOrders] = useState<LabOrder[]>([]);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [selectedRange, setSelectedRange] = useState("This week");
+  const client = getSupabaseClient();
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError("");
+    loadWorkspaceData(userId).then((data) => {
+      if (!active) return;
+      setHospitalSettings(data.settings);
+      setPatients(data.patients);
+      setOrders(data.orders);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      console.error("Unable to load hospital data from Supabase.", error);
+      setLoadError(describeError(error));
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [userId]);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -172,21 +447,70 @@ function App() {
     setMobileNav(false);
     setSearch("");
   };
-  const addOrder = (order: LabOrder) => {
-    setOrders((current) => [order, ...current]);
-    changePage("Lab Order Records");
-    showNotice("Lab order created successfully");
-  };
-  const saveHospitalSettings = (settings: HospitalSettings) => {
+  const addOrder = async (order: LabOrder) => {
     try {
-      localStorage.setItem(hospitalSettingsKey, JSON.stringify(settings));
+      const { error } = await client.from("lab_orders").insert({
+        ...order,
+        owner_id: userId,
+      });
+      if (error) throw error;
+      setOrders((current) => [order, ...current]);
+      changePage("Lab Order Records");
+      showNotice("Lab order created successfully");
+    } catch (error) {
+      console.error("Unable to save the lab order to Supabase.", error);
+      showNotice(`Lab order could not be saved: ${describeError(error)}`);
+    }
+  };
+  const updateOrder = async (invoice: string, field: "payment" | "status") => {
+    const currentOrder = orders.find((order) => order.invoice === invoice);
+    if (!currentOrder) return false;
+    const updates = field === "payment"
+      ? { payment: "Paid" as const }
+      : { status: currentOrder.status === "Pending" ? "Sample Collected" as const : "Completed" as const };
+    try {
+      const { data, error } = await client.from("lab_orders").update(updates).eq("invoice", invoice).select("*").maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("The lab order was not found or you do not have permission to update it.");
+      const savedOrder = toLabOrder(data);
+      setOrders((current) => current.map((order) => order.invoice === invoice ? savedOrder : order));
+      return true;
+    } catch (error) {
+      console.error("Unable to update the lab order in Supabase.", error);
+      showNotice(`Lab order could not be updated: ${describeError(error)}`);
+      return false;
+    }
+  };
+  const saveHospitalSettings = async (settings: HospitalSettings) => {
+    try {
+      const { error } = await client.from("hospital_settings").upsert({
+        user_id: userId,
+        hospital_name: settings.hospitalName,
+        username: settings.username,
+        logo_data_url: settings.logoDataUrl,
+      });
+      if (error) throw error;
       setHospitalSettings(settings);
       showNotice("Hospital settings saved");
     } catch (error) {
-      console.error("Unable to save hospital settings.", error);
-      showNotice("Settings could not be saved. Check browser storage and try again.");
+      console.error("Unable to save hospital settings to Supabase.", error);
+      showNotice(`Settings could not be saved: ${describeError(error)}`);
     }
   };
+  const signOut = async () => {
+    try {
+      await onSignOut();
+    } catch (error) {
+      console.error("Unable to sign out.", error);
+      showNotice(`Could not sign out: ${describeError(error)}`);
+    }
+  };
+
+  if (loading) return <AccessPage title="Loading your workspace" message="Loading patient records and settings securely…" />;
+  if (loadError) return <AccessPage title="Could not load hospital data" message={loadError}>
+    <button className="button button-primary access-submit" onClick={() => window.location.reload()}>Try again</button>
+    <button className="access-switch" onClick={signOut}>Sign out</button>
+  </AccessPage>;
 
   return (
     <div className={`app-shell${dark ? " dark" : ""}`}>
@@ -236,6 +560,7 @@ function App() {
             <button className="profile-button" onClick={() => showNotice(`Signed in as ${hospitalSettings.username} · Administrator`)}>
               <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Administrator</small></span><ChevronDown size={15} />
             </button>
+            <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={signOut}><LogOut size={18} /></button>
           </div>
         </header>
 
@@ -258,7 +583,7 @@ function App() {
             {page === "Patients & EMR" && <PatientDirectory patients={patients} onNewAppointment={() => changePage("Take New Appointment")} />}
             {page === "Take New Appointment" && <AppointmentPage onSubmit={() => { showNotice("Appointment confirmed and token assigned"); changePage("Dashboard"); }} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
-            {page === "Lab Order Records" && <LabRecordsPage orders={orders} setOrders={setOrders} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
+            {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
             {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} />}
             {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
@@ -514,18 +839,13 @@ function LabOrderPage({ onSubmit }: { onSubmit: (order: LabOrder) => void }) {
   </div>;
 }
 
-function LabRecordsPage({ orders, setOrders, search, setSearch, showNotice, changePage }: { orders: LabOrder[]; setOrders: React.Dispatch<React.SetStateAction<LabOrder[]>>; search: string; setSearch: (value: string) => void; showNotice: (message: string) => void; changePage: (page: Page) => void }) {
+function LabRecordsPage({ orders, onUpdateOrder, search, setSearch, showNotice, changePage }: { orders: LabOrder[]; onUpdateOrder: (invoice: string, field: "payment" | "status") => Promise<boolean>; search: string; setSearch: (value: string) => void; showNotice: (message: string) => void; changePage: (page: Page) => void }) {
   const [paymentFilter, setPaymentFilter] = useState("All payments");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [pageNumber, setPageNumber] = useState(1);
   const filtered = orders.filter((order) => `${order.invoice} ${order.patient} ${order.phone}`.toLowerCase().includes(search.toLowerCase()) && (paymentFilter === "All payments" || order.payment === paymentFilter) && (statusFilter === "All statuses" || order.status === statusFilter));
   const start = (pageNumber - 1) * 5;
   const visible = filtered.slice(start, start + 5);
-  const updateOrder = (invoice: string, field: "payment" | "status") => setOrders((current) => current.map((order) => order.invoice === invoice ? {
-    ...order,
-    payment: field === "payment" ? "Paid" : order.payment,
-    status: field === "status" ? (order.status === "Pending" ? "Sample Collected" : order.status === "Sample Collected" ? "Completed" : "Completed") : order.status,
-  } : order));
   const downloadInvoice = async (order: LabOrder) => {
     const { jsPDF } = await import("jspdf");
     const pdf = new jsPDF();
@@ -574,7 +894,7 @@ function LabRecordsPage({ orders, setOrders, search, setSearch, showNotice, chan
     <div className="records-kpis"><div className="panel records-kpi"><span className="stat-icon blue"><FlaskConical size={17} /></span><div><b>{orders.length}</b><small>Total orders</small></div></div><div className="panel records-kpi"><span className="stat-icon green"><Check size={17} /></span><div><b>{orders.filter((item) => item.status === "Completed").length}</b><small>Completed today</small></div></div><div className="panel records-kpi"><span className="stat-icon purple"><Wallet size={17} /></span><div><b>{money(orders.filter((item) => item.payment !== "Paid").reduce((sum, item) => sum + item.total, 0))}</b><small>Outstanding balance</small></div></div></div>
     <section className="panel records-panel">
       <div className="records-toolbar"><div><h3>All lab orders <span className="table-count">{filtered.length}</span></h3><p>View and update diagnostic orders.</p></div><div className="table-filters"><label className="search-input table-search"><Search size={15} /><input placeholder="Search patient or invoice..." value={search} onChange={(event) => { setSearch(event.target.value); setPageNumber(1); }} /></label><select value={paymentFilter} onChange={(event) => { setPaymentFilter(event.target.value); setPageNumber(1); }} aria-label="Filter payment status"><option>All payments</option><option>Paid</option><option>Unpaid</option><option>Due</option></select><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageNumber(1); }} aria-label="Filter order status"><option>All statuses</option><option>Pending</option><option>Sample Collected</option><option>Completed</option></select></div></div>
-      <div className="table-scroll"><table><thead><tr><th>INVOICE NO.</th><th>DATE</th><th>PATIENT</th><th>SUBTOTAL</th><th>PAYMENT</th><th>ORDER STATUS</th><th /></tr></thead><tbody>{visible.map((order) => <tr key={order.invoice}><td><button className="invoice-link" onClick={() => showNotice(`Order ${order.invoice} · ${order.patient}`)}>{order.invoice}</button></td><td>{order.date}</td><td><div className="patient-cell"><span className="patient-avatar">{order.patient.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{order.patient}</b><small>{order.phone}</small></span></div></td><td><b className="table-total">{money(order.total)}</b></td><td><StatusBadge value={order.payment} /></td><td><StatusBadge value={order.status} /></td><td><div className="row-actions"><button title={order.payment === "Paid" ? "Payment collected" : "Collect payment"} disabled={order.payment === "Paid"} onClick={() => { updateOrder(order.invoice, "payment"); showNotice(`Payment collected for ${order.invoice}`); }}><Wallet size={15} /></button><button title="Update invoice status" disabled={order.status === "Completed"} onClick={() => { updateOrder(order.invoice, "status"); showNotice(`Order status updated for ${order.invoice}`); }}><Activity size={15} /></button><button title="Download invoice" onClick={() => downloadInvoice(order)}><Download size={15} /></button></div></td></tr>)}</tbody></table>
+      <div className="table-scroll"><table><thead><tr><th>INVOICE NO.</th><th>DATE</th><th>PATIENT</th><th>SUBTOTAL</th><th>PAYMENT</th><th>ORDER STATUS</th><th /></tr></thead><tbody>{visible.map((order) => <tr key={order.invoice}><td><button className="invoice-link" onClick={() => showNotice(`Order ${order.invoice} · ${order.patient}`)}>{order.invoice}</button></td><td>{order.date}</td><td><div className="patient-cell"><span className="patient-avatar">{order.patient.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{order.patient}</b><small>{order.phone}</small></span></div></td><td><b className="table-total">{money(order.total)}</b></td><td><StatusBadge value={order.payment} /></td><td><StatusBadge value={order.status} /></td><td><div className="row-actions"><button title={order.payment === "Paid" ? "Payment collected" : "Collect payment"} disabled={order.payment === "Paid"} onClick={async () => { if (await onUpdateOrder(order.invoice, "payment")) showNotice(`Payment collected for ${order.invoice}`); }}><Wallet size={15} /></button><button title="Update invoice status" disabled={order.status === "Completed"} onClick={async () => { if (await onUpdateOrder(order.invoice, "status")) showNotice(`Order status updated for ${order.invoice}`); }}><Activity size={15} /></button><button title="Download invoice" onClick={() => downloadInvoice(order)}><Download size={15} /></button></div></td></tr>)}</tbody></table>
       {visible.length === 0 && <div className="empty-table"><span><Search size={20} /></span><b>No lab orders found</b><p>Try changing your search or filters.</p></div>}
       </div>
       <div className="table-footer"><span>Showing <b>{filtered.length ? start + 1 : 0}–{Math.min(start + 5, filtered.length)}</b> of <b>{filtered.length}</b> orders</span><div><button aria-label="Previous page" disabled={pageNumber === 1} onClick={() => setPageNumber((value) => Math.max(1, value - 1))}><ChevronLeft size={16} /></button><button className="page-current">{pageNumber}</button><button aria-label="Next page" disabled={start + 5 >= filtered.length} onClick={() => setPageNumber((value) => value + 1)}><ChevronRight size={16} /></button></div></div>
@@ -640,7 +960,7 @@ function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: Hosp
           {form.logoDataUrl && <button className="settings-remove-logo" type="button" onClick={() => setForm((current) => ({ ...current, logoDataUrl: "" }))}>Remove logo</button>}
         </div>
       </div>
-      <div className="settings-actions"><span>Your changes are saved in this browser.</span><button className="button button-primary" type="submit"><Check size={17} /> Save settings</button></div>
+      <div className="settings-actions"><span>Your changes are saved to your secure workspace.</span><button className="button button-primary" type="submit"><Check size={17} /> Save settings</button></div>
     </form>
   </div>;
 }
