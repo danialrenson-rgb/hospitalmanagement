@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, CircleHelp, ClipboardList, Clock3,
   Download, Droplet, FlaskConical, HeartPulse, LayoutDashboard, Mail, Menu,
   LogOut, Moon, MoreHorizontal, Phone, Plus, Search, Settings, ShieldCheck, Sun,
-  UserRound, Users, Wallet, X,
+  Trash2, UserRound, Users, Wallet, X,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -224,6 +224,7 @@ async function loadWorkspaceData(userId: string) {
   if (ordersResponse.error) throw ordersResponse.error;
 
   let settings = settingsResponse.data;
+  const isNewWorkspace = !settings;
   if (!settings) {
     const defaults = readHospitalSettings();
     const { data, error } = await client.from("hospital_settings").insert({
@@ -243,7 +244,7 @@ async function loadWorkspaceData(userId: string) {
   }
 
   let patientRows = patientsResponse.data;
-  if (patientRows.length === 0) {
+  if (patientRows.length === 0 && isNewWorkspace) {
     const { data, error } = await client.from("patients").insert(initialPatients.map((patient) => ({
       id: patient.id,
       owner_id: userId,
@@ -481,6 +482,26 @@ function HospitalWorkspace({ userId, onSignOut }: { userId: string; onSignOut: (
       return false;
     }
   };
+  const deletePatient = async (patientId: string) => {
+    const patient = patients.find((record) => record.id === patientId);
+    if (!patient) return false;
+    try {
+      const { data, error } = await client.from("patients").delete()
+        .eq("owner_id", userId)
+        .eq("id", patientId)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("The patient was not found or you do not have permission to delete it.");
+      setPatients((current) => current.filter((record) => record.id !== patientId));
+      showNotice(`${patient.name} was deleted`);
+      return true;
+    } catch (error) {
+      console.error("Unable to delete the patient from Supabase.", error);
+      showNotice(`Patient could not be deleted: ${describeError(error)}`);
+      return false;
+    }
+  };
   const saveHospitalSettings = async (settings: HospitalSettings) => {
     try {
       const { error } = await client.from("hospital_settings").upsert({
@@ -580,7 +601,7 @@ function HospitalWorkspace({ userId, onSignOut }: { userId: string; onSignOut: (
         <AnimatePresence mode="wait">
           <motion.div key={page} className="page-transition" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
             {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} />}
-            {page === "Patients & EMR" && <PatientDirectory patients={patients} onNewAppointment={() => changePage("Take New Appointment")} />}
+            {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} />}
             {page === "Take New Appointment" && <AppointmentPage onSubmit={() => { showNotice("Appointment confirmed and token assigned"); changePage("Dashboard"); }} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
@@ -684,10 +705,11 @@ function StatCard({ title, value, change, trend, icon, color, detail, action }: 
   </motion.section>;
 }
 
-function PatientDirectory({ patients, onNewAppointment }: { patients: PatientRecord[]; onNewAppointment: () => void }) {
+function PatientDirectory({ patients, onDeletePatient, onNewAppointment }: { patients: PatientRecord[]; onDeletePatient: (patientId: string) => Promise<boolean>; onNewAppointment: () => void }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All patients");
   const [selectedId, setSelectedId] = useState(patients[0]?.id ?? "");
+  const [deleting, setDeleting] = useState(false);
   const seenToday = patients.filter((patient) => patient.lastVisit === formatSeedDate(0)).length;
   const admitted = patients.filter((patient) => patient.status === "Admitted").length;
   const inTreatment = patients.filter((patient) => patient.status === "In treatment").length;
@@ -696,6 +718,17 @@ function PatientDirectory({ patients, onNewAppointment }: { patients: PatientRec
     return matchesQuery && (statusFilter === "All patients" || patient.status === statusFilter);
   });
   const selectedPatient = filteredPatients.find((patient) => patient.id === selectedId) ?? filteredPatients[0];
+  const deleteSelectedPatient = async () => {
+    if (!selectedPatient || deleting) return;
+    const confirmed = window.confirm(`Delete ${selectedPatient.name} (${selectedPatient.id})? This action cannot be undone.`);
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await onDeletePatient(selectedPatient.id);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return <div className="patient-directory">
     <div className="dashboard-heading">
@@ -703,7 +736,7 @@ function PatientDirectory({ patients, onNewAppointment }: { patients: PatientRec
       <button className="button button-primary" onClick={onNewAppointment}><Plus size={16} /> New appointment</button>
     </div>
     <div className="patient-kpis">
-      <section className="panel patient-kpi"><span className="stat-icon blue"><Users size={17} /></span><div><b>{patients.length}</b><span>Total demo records</span></div></section>
+      <section className="panel patient-kpi"><span className="stat-icon blue"><Users size={17} /></span><div><b>{patients.length}</b><span>Total patients</span></div></section>
       <section className="panel patient-kpi"><span className="stat-icon purple"><CalendarDays size={17} /></span><div><b>{seenToday}</b><span>Seen today</span></div></section>
       <section className="panel patient-kpi"><span className="stat-icon orange"><HeartPulse size={17} /></span><div><b>{inTreatment}</b><span>In treatment</span></div></section>
       <section className="panel patient-kpi"><span className="stat-icon green"><BedDouble size={17} /></span><div><b>{admitted}</b><span>Currently admitted</span></div></section>
@@ -740,6 +773,9 @@ function PatientDirectory({ patients, onNewAppointment }: { patients: PatientRec
             <div><UserRound size={15} /><span><small>Attending doctor</small><b>{selectedPatient.doctor}</b></span></div>
           </div>
           <div className="patient-clinical-note"><small>Visit note · {selectedPatient.lastVisit}</small><b>{selectedPatient.diagnosis}</b><span>Allergies: {selectedPatient.allergies}</span></div>
+          <button type="button" className="button button-danger patient-delete-button" onClick={deleteSelectedPatient} disabled={deleting} aria-label={`Delete ${selectedPatient.name}`}>
+            <Trash2 size={15} />{deleting ? "Deleting patient…" : "Delete patient"}
+          </button>
         </> : <div className="patient-empty"><Users size={22} /><b>Select a patient</b><span>Patient details will appear here.</span></div>}
       </aside>
     </div>

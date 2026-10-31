@@ -82,6 +82,8 @@ kbd { border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; font:
 .button-outline { border-color: #dce4ec; color: #607080; background: rgba(255,255,255,.55); }
 .dark .button-outline { border-color: var(--line); color: var(--ink); background: var(--card); }
 .button-light { color: #458ec9; background: rgba(106,184,255,.1); border-color: rgba(106,184,255,.13); }
+.button-danger { color: #b8424b; background: rgba(222,76,86,.1); border-color: rgba(222,76,86,.2); }
+.dark .button-danger { color: #ff9a9f; background: rgba(222,76,86,.12); border-color: rgba(222,76,86,.25); }
 .panel { background: var(--card); border: 1px solid rgba(255,255,255,.78); box-shadow: var(--shadow); backdrop-filter: blur(18px); border-radius: 17px; }
 .dark .panel { border-color: rgba(81,96,116,.26); }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
@@ -233,6 +235,7 @@ kbd { border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; font:
 .patient-clinical-note { display: grid; gap: 5px; margin-top: 16px; padding: 11px; border: 1px solid rgba(106,184,255,.17); border-radius: 11px; background: rgba(106,184,255,.07); }
 .patient-clinical-note small, .patient-clinical-note span { color: var(--muted); font-size: 8px; }
 .patient-clinical-note b { font-size: 9px; font-weight: 600; }
+.patient-delete-button { width: 100%; margin-top: 14px; }
 .patient-empty { min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--muted); text-align: center; }
 .patient-empty svg { color: #79b4e8; }
 .patient-empty b { color: var(--ink); font-size: 11px; }
