@@ -306,7 +306,7 @@ function App() {
 }
 
 function ConnectionSetup() {
-  return <AccessPage title="Finish Supabase setup" message="Set VITE_SUPABASE_ANON_KEY in your local .env.local file using the project's publishable/anon key, then restart the dev server. Never put the PostgreSQL password or service-role key in this browser app." />;
+  return <AccessPage title="Finish Supabase setup" message="Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY with your Supabase project URL and publishable/anon key. For a Vercel deployment, add both in Project Settings → Environment Variables, then redeploy. Locally, add them to .env.local and restart the dev server. Never use your PostgreSQL password or service-role key here." />;
 }
 
 function AccessPage({ title, message, children }: { title: string; message: string; children?: React.ReactNode }) {

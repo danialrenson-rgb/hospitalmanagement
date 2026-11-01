@@ -26,6 +26,12 @@ npm.cmd run build
 npm.cmd run preview
 ```
 
+## Deploy on Vercel
+
+In the Vercel project's **Settings → Environment Variables**, set `VITE_SUPABASE_URL` to the Supabase project URL and `VITE_SUPABASE_ANON_KEY` to its publishable/anon key. Apply them to the Production environment (and Preview if needed), then redeploy so Vite includes the variables in the browser build. You can find these values in your Supabase project's API settings.
+
+Only use the publishable/anon key in this frontend. Never add a PostgreSQL password or service-role key as a `VITE_*` variable.
+
 ## Supabase security
 
 - Sign-in and account creation use Supabase Auth email/password.
