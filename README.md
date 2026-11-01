@@ -1,17 +1,14 @@
 # Careflow Hospital ERP
 
-A responsive React + TypeScript hospital operations interface with Supabase authentication and PostgreSQL persistence for patient records, lab orders, and hospital settings.
+A responsive React + TypeScript hospital operations demo with sample patient records, lab orders, and hospital settings.
 
 ## Run locally
 
-Requirements: Node.js 20 or newer, npm, and a Supabase project.
+Requirements: Node.js 20 or newer and npm. No Supabase setup is needed for the demo.
 
 ```powershell
 npm.cmd install
-Copy-Item .env.example .env.local
 ```
-
-In `.env.local`, set `VITE_SUPABASE_URL` to your Supabase project URL and `VITE_SUPABASE_ANON_KEY` to its publishable/anon key. Apply `supabase/migrations/20261031000000_create_hospital_tables.sql` using the Supabase SQL editor or CLI.
 
 Start the app:
 
@@ -26,27 +23,20 @@ npm.cmd run build
 npm.cmd run preview
 ```
 
-## Deploy on Vercel
+## Demo behavior
 
-In Vercel **Settings → Environment Variables**, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Production (and Preview if needed). The publishable/anon key is intended for browser use; choose **Config** if Vercel warns that a `VITE_` variable is exposed to the browser. Redeploy after changing variables or code.
-
-Never put a PostgreSQL password or service-role key in frontend code or a `VITE_*` variable.
-
-## Data access
-
-- Users sign in with Supabase Auth email/password. New accounts may need to confirm their email before signing in.
-- Row Level Security restricts hospital settings, patient records, and lab orders to the authenticated user who owns each row.
-- A new account is initialized with sample patient and lab-order records. Subsequent changes to lab orders and hospital settings are saved to Supabase.
-- This is a starter interface, not a production-ready clinical records system. Review privacy, access controls, and regulatory requirements before using real patient data.
+- The app opens directly to the demo workspace; no account or Supabase setup is required.
+- Patient records and lab orders are sample data bundled with the app. Changes are held in memory and reset when the page reloads.
+- The app does not read or write Supabase data. Do not enter real patient information or use this demo for clinical operations.
 
 ## Included workflows
 
 - **Dashboard:** patient, revenue, expense, bed, and lab-report summaries with interactive charts and date-range selection.
 - **OPD appointments:** patient lookup feedback, doctor selection, estimated token, and consultation-fee summary. Appointment submission remains a demo-only workflow.
-- **Lab orders:** patient source selection, searchable/category-filtered test catalog, quantities, discount, payment method, and invoice creation stored in Supabase.
-- **Lab records:** Supabase-backed records, search and status filters, payment collection, status progression, pagination, and invoice download.
-- **Patients & EMR:** Supabase-backed patient records.
-- **Hospital settings:** Supabase-backed hospital name, username, and logo.
+- **Lab orders:** patient source selection, searchable/category-filtered test catalog, quantities, discount, payment method, and demo invoice creation.
+- **Lab records:** sample records, search and status filters, payment collection, status progression, pagination, and invoice download.
+- **Patients & EMR:** sample patient records.
+- **Hospital settings:** demo hospital name, username, and logo.
 - **Interface:** responsive navigation, light/dark mode, accessible form labels, toast feedback, and print-friendly layout.
 
-Dashboard metrics and module overview screens remain demo content; the database connection does not make those workflows production-ready.
+Dashboard metrics and module overview screens are also demo content and are not production-ready.
