@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Activity, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check,
+  Activity, ArrowDownRight, ArrowUpRight, BedDouble, Bell, CalendarDays, Check, Database,
   ChevronDown, ChevronLeft, ChevronRight, CircleHelp, ClipboardList, Clock3,
-  Download, Droplet, FlaskConical, HeartPulse, LayoutDashboard, Mail, Menu,
+  Download, Droplet, FlaskConical, HeartPulse, LayoutDashboard, Mail, Menu, RefreshCw,
   Moon, MoreHorizontal, Phone, Plus, Search, Settings, ShieldCheck, Sun,
   Trash2, UserRound, Users, Wallet, X,
 } from "lucide-react";
@@ -11,8 +11,9 @@ import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
+import { checkDatabaseConnection } from "./supabase";
 
-type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
+type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Database Status" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
 type LabStatus = "Pending" | "Sample Collected" | "Completed";
 type PaymentStatus = "Paid" | "Unpaid" | "Due";
 
@@ -70,6 +71,7 @@ const navigation: { name: string; icon: typeof LayoutDashboard; items?: Page[] }
   { name: "Prescription", icon: ClipboardList },
   { name: "App Users", icon: Users },
   { name: "Master Data", icon: Settings },
+  { name: "Database Status", icon: Database },
   { name: "More", icon: MoreHorizontal, items: ["IPD & Bed Management", "Billing & Invoicing", "Pharmacy & Inventory", "Reports & Analytics", "Emergency & Casualty", "Radiology & Imaging", "Operation Theatre", "Nurse Station", "Blood Bank", "Ambulance & Transport", "HR & Payroll", "Accounts & Finance", "Notifications", "Patient Portal", "Queue Display", "Audit & Security", "Branches & Languages"] },
 ];
 
@@ -256,7 +258,8 @@ function HospitalWorkspace() {
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
             {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} />}
-            {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
+            {page === "Database Status" && <DatabaseStatusPage />}
+            {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
         </AnimatePresence>
         </main>
@@ -267,6 +270,55 @@ function HospitalWorkspace() {
   );
 }
 
+function DatabaseStatusPage() {
+  const [result, setResult] = useState<Awaited<ReturnType<typeof checkDatabaseConnection>> | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  const runCheck = useCallback(async () => {
+    setChecking(true);
+    const connectionResult = await checkDatabaseConnection();
+    setResult(connectionResult);
+    setCheckedAt(new Date());
+    setChecking(false);
+  }, []);
+
+  useEffect(() => {
+    void runCheck();
+  }, [runCheck]);
+
+  const statusLabel = checking ? "Checking connection" : result?.status === "connected"
+    ? "Connected"
+    : result?.status === "restricted"
+      ? "Connected · access restricted"
+      : result?.status === "schema_missing"
+        ? "Connected · setup required"
+        : result?.status === "not_configured"
+          ? "Not configured"
+          : "Not connected";
+
+  return <div className="database-status-page">
+    <div className="dashboard-heading">
+      <div><h2>Database connection</h2><p>Check whether this app can reach your Supabase database.</p></div>
+      <button className="button button-outline" onClick={() => void runCheck()} disabled={checking}>
+        <RefreshCw size={16} className={checking ? "spin" : ""} /> {checking ? "Checking…" : "Check again"}
+      </button>
+    </div>
+    <section className="panel database-status-panel">
+      <div className={`database-status-indicator ${checking ? "checking" : result?.status ?? "disconnected"}`} aria-live="polite">
+        <span className="database-status-icon">{checking ? <RefreshCw size={22} className="spin" /> : result?.status === "connected" ? <Check size={22} /> : result?.status === "restricted" ? <ShieldCheck size={22} /> : <X size={22} />}</span>
+        <div><h3>{statusLabel}</h3><p>{checking ? "Sending a safe connection check to Supabase…" : result?.message}</p></div>
+      </div>
+      <div className="database-status-details">
+        <div><Database size={17} /><span><b>Service</b><small>Supabase PostgREST API</small></span></div>
+        <div><ShieldCheck size={17} /><span><b>Data access</b><small>No patient records are read by this check.</small></span></div>
+        {checkedAt && <div><RefreshCw size={17} /><span><b>Last checked</b><small>{checkedAt.toLocaleTimeString()}</small></span></div>}
+      </div>
+      <p className="database-status-note">This app is currently in no-login demo mode. A successful connection check does not enable saving patient data; the database’s access policies remain in force.</p>
+    </section>
+  </div>;
+}
+
 function pageDescription(page: Page) {
   const descriptions: Partial<Record<Page, string>> = {
     "Take New Appointment": "Schedule an outpatient visit and get your patient in front of the right specialist.",
@@ -275,6 +327,7 @@ function pageDescription(page: Page) {
     "Prescription": "Create, review, and manage patient prescriptions.",
     "App Users": "Manage staff accounts, roles, and module permissions.",
     "Master Data": "Update your hospital name, administrator profile, and logo.",
+    "Database Status": "Check the connection to your Supabase database.",
     "Patients & EMR": "Patient profiles, medical history, allergies, and visit timelines.",
     "Doctor Scheduling": "Plan doctor shifts, appointments, and availability.",
     "IPD & Bed Management": "Manage admissions, ward capacity, transfers, and bed status.",

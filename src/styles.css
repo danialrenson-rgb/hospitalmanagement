@@ -896,6 +896,25 @@ table td { font-size: 13px; }
 .settings-actions > span { color: var(--muted); font-size: 13px; }
 .app-shell:not(.dark) .settings-field { color: var(--ink); }
 .app-shell:not(.dark) .settings-field input { border-color: var(--line); background: var(--card-solid); }
+.database-status-page { display: grid; gap: 16px; }
+.database-status-page .dashboard-heading { margin: 0; }
+.database-status-panel { max-width: 900px; padding: 24px; }
+.database-status-indicator { display: flex; align-items: flex-start; gap: 15px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--soft); }
+.database-status-icon { width: 44px; height: 44px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 12px; }
+.database-status-indicator h3 { margin: 2px 0 5px; color: var(--ink); font-size: 17px; }
+.database-status-indicator p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.database-status-indicator.connected .database-status-icon { color: #16845d; background: rgba(46, 190, 133, .14); }
+.database-status-indicator.restricted .database-status-icon, .database-status-indicator.schema_missing .database-status-icon { color: #a56a11; background: rgba(242, 178, 57, .16); }
+.database-status-indicator.disconnected .database-status-icon, .database-status-indicator.not_configured .database-status-icon { color: #c24650; background: rgba(222, 76, 86, .12); }
+.database-status-indicator.checking .database-status-icon { color: #388acb; background: rgba(106, 184, 255, .14); }
+.database-status-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 18px; }
+.database-status-details > div { display: flex; align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: var(--card-solid); }
+.database-status-details > div > span { display: grid; gap: 4px; }
+.database-status-details b { color: var(--ink); font-size: 12px; }
+.database-status-details small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.database-status-note { margin: 18px 0 0; padding-top: 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.55; }
+.spin { animation: database-status-spin 1s linear infinite; }
+@keyframes database-status-spin { to { transform: rotate(360deg); } }
 @media (max-width: 620px) {
   .date-control { align-self: flex-start; }
   .date-picker-popover { right: auto; left: 0; }
@@ -905,5 +924,6 @@ table td { font-size: 13px; }
   .settings-section-heading .stat-icon { flex: 0 0 auto; }
   .settings-logo-control { flex-wrap: wrap; margin-left: 0; }
   .settings-actions { align-items: flex-start; flex-direction: column; }
+  .database-status-panel { padding: 18px; }
   .brand-name { max-width: 195px; }
 }

@@ -27,7 +27,8 @@ npm.cmd run preview
 
 - The app opens directly to the demo workspace; no account or Supabase setup is required.
 - Patient records and lab orders are sample data bundled with the app. Changes are held in memory and reset when the page reloads.
-- The app does not read or write Supabase data. Do not enter real patient information or use this demo for clinical operations.
+- The **Database Status** page checks Supabase reachability without requesting patient rows. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel to enable the check.
+- This demo does not save to Supabase. Do not enter real patient information or use it for clinical operations.
 
 ## Included workflows
 
