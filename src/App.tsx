@@ -12,11 +12,13 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import type { Session } from "@supabase/supabase-js";
+import type { Json } from "./database.types";
 import { checkDatabaseConnection, getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Database Status" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
 type LabStatus = "Pending" | "Sample Collected" | "Completed";
 type PaymentStatus = "Paid" | "Unpaid" | "Due";
+type LabOrderItem = { name: string; rate: number; quantity: number };
 
 type HospitalSettings = {
   hospitalName: string;
@@ -36,8 +38,24 @@ type LabOrder = {
   patient: string;
   phone: string;
   total: number;
+  discount: number;
+  items: LabOrderItem[];
   payment: PaymentStatus;
   status: LabStatus;
+};
+
+type AppointmentRecord = {
+  id: string;
+  patientName: string;
+  phone: string;
+  ageYears: number;
+  ageMonths: number;
+  ageDays: number;
+  gender: string;
+  doctor: string;
+  visitDate: string;
+  consultationType: string;
+  fee: number;
 };
 
 type PatientStatus = "In treatment" | "Admitted" | "Discharged" | "Scheduled";
@@ -56,6 +74,23 @@ type PatientRecord = {
   status: PatientStatus;
   diagnosis: string;
   allergies: string;
+};
+
+const isLabStatus = (value: string): value is LabStatus =>
+  value === "Pending" || value === "Sample Collected" || value === "Completed";
+const isPaymentStatus = (value: string): value is PaymentStatus =>
+  value === "Paid" || value === "Unpaid" || value === "Due";
+const isPatientStatus = (value: string): value is PatientStatus =>
+  value === "In treatment" || value === "Admitted" || value === "Discharged" || value === "Scheduled";
+const parseLabOrderItems = (value: Json): LabOrderItem[] => {
+  if (!Array.isArray(value)) throw new Error("Lab order items must be stored as an array.");
+  return value.map((item) => {
+    if (!item || Array.isArray(item) || typeof item !== "object"
+      || typeof item.name !== "string" || typeof item.rate !== "number" || typeof item.quantity !== "number") {
+      throw new Error("A saved lab order contains an invalid test item.");
+    }
+    return { name: item.name, rate: item.rate, quantity: item.quantity };
+  });
 };
 
 const formatSeedDate = (daysAgo: number) => {
@@ -88,12 +123,12 @@ const initialPatients: PatientRecord[] = [
 ];
 
 const initialOrders: LabOrder[] = [
-  { invoice: "INV-240518", date: formatSeedDate(0), patient: "Olivia Rhye", phone: "+1 202 555 0148", total: 185, payment: "Paid", status: "Completed" },
-  { invoice: "INV-240517", date: formatSeedDate(0), patient: "Phoenix Baker", phone: "+1 202 555 0172", total: 320, payment: "Due", status: "Sample Collected" },
-  { invoice: "INV-240516", date: formatSeedDate(1), patient: "Lana Steiner", phone: "+1 202 555 0194", total: 95, payment: "Unpaid", status: "Pending" },
-  { invoice: "INV-240515", date: formatSeedDate(1), patient: "Demi Wilkinson", phone: "+1 202 555 0186", total: 240, payment: "Paid", status: "Completed" },
-  { invoice: "INV-240514", date: formatSeedDate(2), patient: "Candice Wu", phone: "+1 202 555 0129", total: 155, payment: "Due", status: "Pending" },
-  { invoice: "INV-240513", date: formatSeedDate(2), patient: "Natali Craig", phone: "+1 202 555 0163", total: 410, payment: "Paid", status: "Sample Collected" },
+  { invoice: "INV-240518", date: formatSeedDate(0), patient: "Olivia Rhye", phone: "+1 202 555 0148", total: 185, discount: 0, items: [], payment: "Paid", status: "Completed" },
+  { invoice: "INV-240517", date: formatSeedDate(0), patient: "Phoenix Baker", phone: "+1 202 555 0172", total: 320, discount: 0, items: [], payment: "Due", status: "Sample Collected" },
+  { invoice: "INV-240516", date: formatSeedDate(1), patient: "Lana Steiner", phone: "+1 202 555 0194", total: 95, discount: 0, items: [], payment: "Unpaid", status: "Pending" },
+  { invoice: "INV-240515", date: formatSeedDate(1), patient: "Demi Wilkinson", phone: "+1 202 555 0186", total: 240, discount: 0, items: [], payment: "Paid", status: "Completed" },
+  { invoice: "INV-240514", date: formatSeedDate(2), patient: "Candice Wu", phone: "+1 202 555 0129", total: 155, discount: 0, items: [], payment: "Due", status: "Pending" },
+  { invoice: "INV-240513", date: formatSeedDate(2), patient: "Natali Craig", phone: "+1 202 555 0163", total: 410, discount: 0, items: [], payment: "Paid", status: "Sample Collected" },
 ];
 
 const revenueData = [
@@ -148,6 +183,11 @@ function HospitalWorkspace() {
   const [mobileNav, setMobileNav] = useState(false);
   const [orders, setOrders] = useState<LabOrder[]>(initialOrders);
   const [patients, setPatients] = useState<PatientRecord[]>(initialPatients);
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState("");
+  const [orderSaving, setOrderSaving] = useState(false);
+  const [appointmentSaving, setAppointmentSaving] = useState(false);
   const [hospitalSettings, setHospitalSettings] = useState(defaultHospitalSettings);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -191,6 +231,100 @@ function HospitalWorkspace() {
   }, []);
 
   const userId = session?.user.id;
+  useEffect(() => {
+    if (!userId) {
+      setPatients(initialPatients);
+      setOrders(initialOrders);
+      setAppointments([]);
+      setRecordsLoading(false);
+      setRecordsError("");
+      return;
+    }
+
+    let active = true;
+    setPatients([]);
+    setOrders([]);
+    setAppointments([]);
+    setRecordsLoading(true);
+    setRecordsError("");
+    void (async () => {
+      try {
+        const client = getSupabaseClient();
+        const [patientsResult, ordersResult, appointmentsResult] = await Promise.all([
+          client.from("patients").select("*").order("created_at", { ascending: false }),
+          client.from("lab_orders").select("*").order("created_at", { ascending: false }),
+          client.from("appointments").select("*").order("visit_date", { ascending: false }).order("created_at", { ascending: false }),
+        ]);
+        if (patientsResult.error) throw patientsResult.error;
+        if (ordersResult.error) throw ordersResult.error;
+        if (appointmentsResult.error) throw appointmentsResult.error;
+        if (!active) return;
+
+        setPatients(patientsResult.data.map((record) => {
+          if (!isPatientStatus(record.status)) throw new Error(`Unknown patient status: ${record.status}`);
+          return {
+            id: record.id,
+            name: record.name,
+            age: record.age,
+            gender: record.gender,
+            phone: record.phone,
+            email: record.email,
+            bloodGroup: record.blood_group,
+            department: record.department,
+            doctor: record.doctor,
+            lastVisit: record.last_visit,
+            status: record.status,
+            diagnosis: record.diagnosis,
+            allergies: record.allergies,
+          };
+        }));
+        setOrders(ordersResult.data.map((order) => {
+          if (!isLabStatus(order.status) || !isPaymentStatus(order.payment)) {
+            throw new Error(`Unknown status for lab order ${order.invoice}`);
+          }
+          return {
+            invoice: order.invoice,
+            date: order.date,
+            patient: order.patient,
+            phone: order.phone,
+            total: Number(order.total),
+            discount: Number(order.discount),
+            items: parseLabOrderItems(order.items),
+            payment: order.payment,
+            status: order.status,
+          };
+        }));
+        setAppointments(appointmentsResult.data.map((appointment) => ({
+          id: appointment.id,
+          patientName: appointment.patient_name,
+          phone: appointment.phone,
+          ageYears: appointment.age_years,
+          ageMonths: appointment.age_months,
+          ageDays: appointment.age_days,
+          gender: appointment.gender,
+          doctor: appointment.doctor,
+          visitDate: appointment.visit_date,
+          consultationType: appointment.consultation_type,
+          fee: Number(appointment.fee),
+        })));
+      } catch (error) {
+        console.error("Could not load patient, lab, and appointment records from Supabase:", error);
+        if (active) {
+          setPatients([]);
+          setOrders([]);
+          setAppointments([]);
+          setRecordsError("Could not load your saved patient, lab, and appointment records. Check that the Supabase tables and row-level security policies are configured.");
+        }
+      } finally {
+        if (active) setRecordsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
   useEffect(() => {
     if (!userId) {
       setHospitalSettings(defaultHospitalSettings);
@@ -247,26 +381,137 @@ function HospitalWorkspace() {
     setMobileNav(false);
     setSearch("");
   };
-  const addOrder = (order: LabOrder) => {
-    setOrders((current) => [order, ...current]);
-    changePage("Lab Order Records");
-    showNotice("Demo lab order created (not saved)");
+  const addOrder = async (order: LabOrder) => {
+    setOrderSaving(true);
+    setRecordsError("");
+    try {
+      if (session) {
+        const { error } = await getSupabaseClient().from("lab_orders").insert({
+          owner_id: session.user.id,
+          invoice: order.invoice,
+          date: order.date,
+          patient: order.patient,
+          phone: order.phone,
+          total: order.total,
+          discount: order.discount,
+          items: order.items,
+          payment: order.payment,
+          status: order.status,
+        });
+        if (error) throw error;
+        setOrders((current) => [order, ...current]);
+        showNotice("Lab order saved to Supabase.");
+      } else {
+        setOrders((current) => [order, ...current]);
+        showNotice("Demo lab order created. Sign in to save it permanently.");
+      }
+      changePage("Lab Order Records");
+    } catch (error) {
+      console.error("Could not save lab order to Supabase:", error);
+      setRecordsError("Could not save this lab order to Supabase. Check your connection, table setup, and account permissions, then try again.");
+    } finally {
+      setOrderSaving(false);
+    }
   };
-  const updateOrder = (invoice: string, field: "payment" | "status") => {
+  const addAppointment = async (appointment: Omit<AppointmentRecord, "id">) => {
+    setAppointmentSaving(true);
+    setRecordsError("");
+    try {
+      if (session) {
+        const { data, error } = await getSupabaseClient()
+          .from("appointments")
+          .insert({
+            owner_id: session.user.id,
+            patient_name: appointment.patientName,
+            phone: appointment.phone,
+            age_years: appointment.ageYears,
+            age_months: appointment.ageMonths,
+            age_days: appointment.ageDays,
+            gender: appointment.gender,
+            doctor: appointment.doctor,
+            visit_date: appointment.visitDate,
+            consultation_type: appointment.consultationType,
+            fee: appointment.fee,
+          })
+          .select("*")
+          .single();
+        if (error) throw error;
+        setAppointments((current) => [{
+          ...appointment,
+          id: data.id,
+          patientName: data.patient_name,
+          phone: data.phone,
+          ageYears: data.age_years,
+          ageMonths: data.age_months,
+          ageDays: data.age_days,
+          gender: data.gender,
+          doctor: data.doctor,
+          visitDate: data.visit_date,
+          consultationType: data.consultation_type,
+          fee: Number(data.fee),
+        }, ...current]);
+        showNotice("Appointment saved to Supabase.");
+      } else {
+        setAppointments((current) => [{ ...appointment, id: crypto.randomUUID() }, ...current]);
+        showNotice("Demo appointment confirmed. Sign in to save it permanently.");
+      }
+      changePage("Doctor Scheduling");
+    } catch (error) {
+      console.error("Could not save appointment to Supabase:", error);
+      setRecordsError("Could not save this appointment to Supabase. Check your connection, table setup, and account permissions, then try again.");
+    } finally {
+      setAppointmentSaving(false);
+    }
+  };
+  const updateOrder = async (invoice: string, field: "payment" | "status") => {
     const currentOrder = orders.find((order) => order.invoice === invoice);
     if (!currentOrder) return false;
     const updatedOrder = field === "payment"
       ? { ...currentOrder, payment: "Paid" as const }
       : { ...currentOrder, status: currentOrder.status === "Pending" ? "Sample Collected" as const : "Completed" as const };
+    if (session) {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from("lab_orders")
+          .update(field === "payment" ? { payment: updatedOrder.payment } : { status: updatedOrder.status })
+          .eq("invoice", invoice)
+          .select("invoice")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error(`Lab order ${invoice} was not found or cannot be updated.`);
+        setRecordsError("");
+      } catch (error) {
+        console.error(`Could not update lab order ${invoice} in Supabase:`, error);
+        setRecordsError(`Could not update lab order ${invoice} in Supabase. Check your connection and account permissions, then try again.`);
+        return false;
+      }
+    }
     setOrders((current) => current.map((order) => order.invoice === invoice ? updatedOrder : order));
-    showNotice("Demo order updated (not saved)");
+    if (!session) showNotice("Demo order updated. Sign in to save changes permanently.");
     return true;
   };
-  const deletePatient = (patientId: string) => {
+  const deletePatient = async (patientId: string) => {
     const patient = patients.find((record) => record.id === patientId);
     if (!patient) return false;
+    if (session) {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from("patients")
+          .delete()
+          .eq("id", patientId)
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error(`Patient ${patientId} was not found or cannot be deleted.`);
+        setRecordsError("");
+      } catch (error) {
+        console.error(`Could not delete patient ${patientId} from Supabase:`, error);
+        setRecordsError(`Could not delete ${patient.name} from Supabase. Check your connection and account permissions, then try again.`);
+        return false;
+      }
+    }
     setPatients((current) => current.filter((record) => record.id !== patientId));
-    showNotice(`${patient.name} was removed from the demo`);
+    showNotice(session ? `${patient.name} was deleted from Supabase.` : `${patient.name} was removed from the demo.`);
     return true;
   };
   const saveHospitalSettings = async (settings: HospitalSettings) => {
@@ -334,7 +579,7 @@ function HospitalWorkspace() {
             })}
           </div>
         </nav>
-        <div className="sidebar-security"><ShieldCheck size={17} /><span><b>Demo workspace</b><small>Sample data only</small></span><i /></div>
+        <div className="sidebar-security"><ShieldCheck size={17} /><span><b>{session ? "Connected workspace" : "Demo workspace"}</b><small>{session ? "Supabase data enabled" : "Sample data only"}</small></span><i /></div>
       </aside>
 
       <div className="app-workspace">
@@ -372,17 +617,18 @@ function HospitalWorkspace() {
         <AnimatePresence mode="wait">
           <motion.div key={page} className="page-transition" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
             {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} />}
-            {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} />}
-            {page === "Take New Appointment" && <AppointmentPage onSubmit={() => { showNotice("Appointment confirmed and token assigned"); changePage("Dashboard"); }} />}
-            {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
-            {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
+            {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} loading={recordsLoading} error={recordsError} signedIn={Boolean(session)} />}
+            {page === "Take New Appointment" && <AppointmentPage onSubmit={addAppointment} saving={appointmentSaving} loading={recordsLoading} error={recordsError} />}
+            {page === "Doctor Scheduling" && <AppointmentRecordsPage appointments={appointments} loading={recordsLoading} error={recordsError} changePage={changePage} signedIn={Boolean(session)} />}
+            {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} saving={orderSaving} loading={recordsLoading} signedIn={Boolean(session)} error={recordsError} />}
+            {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} loading={recordsLoading} error={recordsError} />}
             {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn={Boolean(session)} error={settingsError} onSignIn={() => setDemoMode(false)} />}
             {page === "Database Status" && <DatabaseStatusPage />}
-            {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
+            {!["Dashboard", "Patients & EMR", "Take New Appointment", "Doctor Scheduling", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
         </AnimatePresence>
         </main>
-        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> {session ? "Patient and lab records are demo data" : "Demo data only · changes reset on reload"}</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
+        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> {session ? "Patient, lab, and appointment records saved to Supabase" : "Demo data only · changes reset on reload"}</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
       </div>
       <AnimatePresence>{notice && <motion.div className="toast" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}><span className="toast-check"><Check size={15} /></span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}</AnimatePresence>
     </div>
@@ -424,7 +670,7 @@ function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => 
     <section className="panel auth-panel">
       <div className="auth-brand"><span className="brand-mark"><Activity size={20} /></span><span>Careflow Hospital</span></div>
       <h1>{mode === "sign_in" ? "Sign in to your workspace" : "Create your account"}</h1>
-      <p className="auth-description">Sign in to save hospital settings to your Supabase account. Patient and lab records remain demo data.</p>
+      <p className="auth-description">Sign in to save hospital settings, patient records, lab orders, and appointments to your Supabase account.</p>
       <form className="auth-form" onSubmit={(event) => void submit(event)}>
         <label className="settings-field"><span>Email</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
         <label className="settings-field"><span>Password</span><input type="password" autoComplete={mode === "sign_in" ? "current-password" : "new-password"} minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>
@@ -479,7 +725,7 @@ function DatabaseStatusPage() {
         <div><ShieldCheck size={17} /><span><b>Data access</b><small>Database tables and patient records are not checked.</small></span></div>
         {checkedAt && <div><RefreshCw size={17} /><span><b>Last checked</b><small>{checkedAt.toLocaleTimeString()}</small></span></div>}
       </div>
-      <p className="database-status-note">This check confirms the Supabase Auth API is reachable; it does not verify database tables. Signed-in users can save workspace settings, while patient and lab records remain demo data.</p>
+      <p className="database-status-note">This check confirms the Supabase Auth API is reachable; it does not verify database tables. Sign in to load and save patient records, lab orders, and appointments. If table access fails, the affected page displays the database error.</p>
     </section>
   </div>;
 }
@@ -494,7 +740,7 @@ function pageDescription(page: Page) {
     "Master Data": "Update your hospital name, administrator profile, and logo.",
     "Database Status": "Check the connection to your Supabase database.",
     "Patients & EMR": "Patient profiles, medical history, allergies, and visit timelines.",
-    "Doctor Scheduling": "Plan doctor shifts, appointments, and availability.",
+    "Doctor Scheduling": "Review saved appointments and consultation details.",
     "IPD & Bed Management": "Manage admissions, ward capacity, transfers, and bed status.",
     "Billing & Invoicing": "Review hospital charges, payments, and outstanding balances.",
     "Pharmacy & Inventory": "Monitor medicines, stock levels, batches, and expiry dates.",
@@ -573,7 +819,14 @@ function StatCard({ title, value, change, trend, icon, color, detail, action }: 
   </motion.section>;
 }
 
-function PatientDirectory({ patients, onDeletePatient, onNewAppointment }: { patients: PatientRecord[]; onDeletePatient: (patientId: string) => boolean; onNewAppointment: () => void }) {
+function PatientDirectory({ patients, onDeletePatient, onNewAppointment, loading, error, signedIn }: {
+  patients: PatientRecord[];
+  onDeletePatient: (patientId: string) => Promise<boolean>;
+  onNewAppointment: () => void;
+  loading: boolean;
+  error: string;
+  signedIn: boolean;
+}) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All patients");
   const [selectedId, setSelectedId] = useState(patients[0]?.id ?? "");
@@ -603,6 +856,7 @@ function PatientDirectory({ patients, onDeletePatient, onNewAppointment }: { pat
       <div><h2>Patient directory</h2><p>Search patient records and review their care details.</p></div>
       <button className="button button-primary" onClick={onNewAppointment}><Plus size={16} /> New appointment</button>
     </div>
+    {error && <p className="settings-error" role="alert">{error}</p>}
     <div className="patient-kpis">
       <section className="panel patient-kpi"><span className="stat-icon blue"><Users size={17} /></span><div><b>{patients.length}</b><span>Total patients</span></div></section>
       <section className="panel patient-kpi"><span className="stat-icon purple"><CalendarDays size={17} /></span><div><b>{seenToday}</b><span>Seen today</span></div></section>
@@ -623,7 +877,8 @@ function PatientDirectory({ patients, onDeletePatient, onNewAppointment }: { pat
             <span className="patient-cell"><span className="patient-avatar">{patient.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span><b>{patient.name}</b><small>{patient.id} · {patient.age} yrs, {patient.gender}</small></span></span>
             <span className="patient-department">{patient.department}</span><span className="patient-last-visit">{patient.lastVisit}</span><span><StatusBadge value={patient.status} /></span>
           </button>)}
-          {filteredPatients.length === 0 && <div className="patient-empty"><Users size={22} /><b>No patients found</b><span>Try another name, ID, phone number, or status.</span></div>}
+          {loading && <div className="patient-empty"><RefreshCw className="spin" size={22} /><b>Loading saved patients…</b></div>}
+          {!loading && filteredPatients.length === 0 && <div className="patient-empty"><Users size={22} /><b>No patients found</b><span>Try another name, ID, phone number, or status.</span></div>}
         </div>
       </section>
       <aside className="panel patient-detail-panel">
@@ -647,11 +902,16 @@ function PatientDirectory({ patients, onDeletePatient, onNewAppointment }: { pat
         </> : <div className="patient-empty"><Users size={22} /><b>Select a patient</b><span>Patient details will appear here.</span></div>}
       </aside>
     </div>
-    <p className="patient-demo-note"><ShieldCheck size={14} /> Demo patient information only. Connect a secured backend before entering real patient data.</p>
+    <p className="patient-demo-note"><ShieldCheck size={14} /> {signedIn ? "Patient records are loaded from your Supabase account." : "Demo patient information only. Sign in to load records from your Supabase account."} Do not enter real patient information in demo mode.</p>
   </div>;
 }
 
-function AppointmentPage({ onSubmit }: { onSubmit: () => void }) {
+function AppointmentPage({ onSubmit, saving, loading, error }: {
+  onSubmit: (appointment: Omit<AppointmentRecord, "id">) => Promise<void>;
+  saving: boolean;
+  loading: boolean;
+  error: string;
+}) {
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [doctor, setDoctor] = useState("");
@@ -665,6 +925,7 @@ function AppointmentPage({ onSubmit }: { onSubmit: () => void }) {
   return <div className="workflow-layout">
     <div className="workflow-main">
       <SectionHeading title="Appointment details" subtitle="Fill in the patient and consultation information to reserve a visit." />
+      {error && <p className="settings-error" role="alert">{error}</p>}
       <section className="panel form-panel">
         <div className="form-section-title"><span className="step-number">01</span><div><h3>Patient information</h3><p>Enter a phone number to check for existing patient records.</p></div></div>
         <div className="form-grid">
@@ -682,7 +943,18 @@ function AppointmentPage({ onSubmit }: { onSubmit: () => void }) {
           <label className="field"><span>Consultation type</span><select value={consultationType} onChange={(event) => setConsultationType(event.target.value)}><option>New consultation</option><option>Follow-up</option><option>Teleconsultation</option></select></label>
         </div>
       </section>
-      <div className="form-actions"><button className="button button-outline" onClick={() => { setPhone(""); setName(""); setDoctor(""); setDate(todayInput); setGender(""); setConsultationType("New consultation"); setFee(85); setAge({ years: "", months: "", days: "" }); }}>Reset form</button><button className="button button-primary" disabled={!doctor || !date || !phone.trim() || (!name.trim() && !foundPatient)} onClick={onSubmit}><Check size={16} /> Confirm appointment</button></div>
+      <div className="form-actions"><button className="button button-outline" onClick={() => { setPhone(""); setName(""); setDoctor(""); setDate(todayInput); setGender(""); setConsultationType("New consultation"); setFee(85); setAge({ years: "", months: "", days: "" }); }}>Reset form</button><button className="button button-primary" disabled={saving || loading || !doctor || !date || !phone.trim() || (!name.trim() && !foundPatient)} onClick={() => void onSubmit({
+        patientName: name.trim() || "Olivia Rhye",
+        phone: phone.trim(),
+        ageYears: Number(age.years) || 0,
+        ageMonths: Number(age.months) || 0,
+        ageDays: Number(age.days) || 0,
+        gender,
+        doctor,
+        visitDate: date,
+        consultationType,
+        fee,
+      })}><Check size={16} /> {loading ? "Loading saved records…" : saving ? "Saving appointment…" : "Confirm appointment"}</button></div>
     </div>
     <aside className="workflow-aside">
       <section className="panel token-card"><div className="token-top"><span className="stat-icon blue"><TicketIcon /></span><span className="live-badge"><i /> Live queue</span></div><h3>Patient token</h3><p>Estimated current serial / next patient token</p><div className="token-number">#<b>024</b></div><div className="token-foot"><span>Today’s queue</span><b>18 patients ahead</b></div><div className="queue-track"><i /></div><div className="queue-times"><span>09:00 AM</span><span>~25 min wait</span></div></section>
@@ -694,7 +966,35 @@ function AppointmentPage({ onSubmit }: { onSubmit: () => void }) {
 
 function TicketIcon() { return <span className="ticket-glyph">#</span>; }
 
-function LabOrderPage({ onSubmit }: { onSubmit: (order: LabOrder) => void }) {
+function AppointmentRecordsPage({ appointments, loading, error, changePage, signedIn }: {
+  appointments: AppointmentRecord[];
+  loading: boolean;
+  error: string;
+  changePage: (page: Page) => void;
+  signedIn: boolean;
+}) {
+  return <>
+    <div className="dashboard-heading records-heading">
+      <div><h2>Appointment records</h2><p>Review outpatient appointments and consultation details.</p></div>
+      <button className="button button-primary" onClick={() => changePage("Take New Appointment")}><Plus size={16} /> New appointment</button>
+    </div>
+    {error && <p className="settings-error" role="alert">{error}</p>}
+    <section className="panel records-panel">
+      <div className="records-toolbar"><div><h3>All appointments <span className="table-count">{appointments.length}</span></h3><p>{signedIn ? "Appointments are saved to your Supabase account." : "Demo appointments reset when you reload. Sign in to save them."}</p></div></div>
+      <div className="table-scroll"><table><thead><tr><th>PATIENT</th><th>PHONE</th><th>DOCTOR</th><th>VISIT DATE</th><th>CONSULTATION</th><th>FEE</th></tr></thead><tbody>
+        {appointments.map((appointment) => <tr key={appointment.id}>
+          <td><div className="patient-cell"><span className="patient-avatar">{appointment.patientName.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{appointment.patientName}</b><small>{[appointment.ageYears && `${appointment.ageYears} yrs`, appointment.gender].filter(Boolean).join(" · ") || "Age and gender not provided"}</small></span></div></td>
+          <td>{appointment.phone}</td><td>{appointment.doctor}</td><td>{appointment.visitDate}</td><td>{appointment.consultationType}</td><td><b className="table-total">{money(appointment.fee)}</b></td>
+        </tr>)}
+      </tbody></table>
+      {loading && <div className="empty-table"><RefreshCw className="spin" size={20} /><b>Loading saved appointments…</b></div>}
+      {!loading && appointments.length === 0 && <div className="empty-table"><span><CalendarDays size={20} /></span><b>No appointments found</b><p>Create an appointment to add a record here.</p></div>}
+      </div>
+    </section>
+  </>;
+}
+
+function LabOrderPage({ onSubmit, saving, loading, signedIn, error }: { onSubmit: (order: LabOrder) => Promise<void>; saving: boolean; loading: boolean; signedIn: boolean; error: string }) {
   const [source, setSource] = useState("New Patient");
   const [category, setCategory] = useState("All services");
   const [query, setQuery] = useState("");
@@ -702,7 +1002,7 @@ function LabOrderPage({ onSubmit }: { onSubmit: (order: LabOrder) => void }) {
   const [phone, setPhone] = useState("");
   const [discount, setDiscount] = useState(0);
   const [payment, setPayment] = useState("Pay at reception");
-  const [cart, setCart] = useState<{ name: string; rate: number; quantity: number }[]>([]);
+  const [cart, setCart] = useState<LabOrderItem[]>([]);
   const subtotal = cart.reduce((sum, item) => sum + item.rate * item.quantity, 0);
   const total = Math.max(0, subtotal - discount);
   const filteredServices = services.filter((service) => (category === "All services" || service.category === category) && service.name.toLowerCase().includes(query.toLowerCase()));
@@ -715,6 +1015,7 @@ function LabOrderPage({ onSubmit }: { onSubmit: (order: LabOrder) => void }) {
   return <div className="workflow-layout lab-workflow">
     <div className="workflow-main">
       <SectionHeading title="Create lab order" subtitle="Select tests and create an invoice for a new or existing patient." />
+      {error && <p className="settings-error" role="alert">{error}</p>}
       <section className="panel form-panel">
         <div className="form-section-title"><span className="step-number">01</span><div><h3>Patient & order source</h3><p>Choose where this lab order is coming from.</p></div></div>
         <div className="source-options">{["New Patient", "Old Patient", "Prescription Patient"].map((item) => <button key={item} onClick={() => setSource(item)} className={source === item ? "source-active" : ""}><span className="radio-dot" />{item}</button>)}</div>
@@ -736,14 +1037,23 @@ function LabOrderPage({ onSubmit }: { onSubmit: (order: LabOrder) => void }) {
         <div className="cart-list">{cart.length === 0 ? <div className="cart-empty"><span><ClipboardList size={20} /></span><b>No tests added yet</b><small>Choose a service to add it to this order.</small></div> : cart.map((item) => <div className="cart-item" key={item.name}><div><b>{item.name}</b><small>{money(item.rate)} each</small></div><div className="quantity-control"><button aria-label={`Remove one ${item.name}`} onClick={() => setQuantity(item.name, item.quantity - 1)}>−</button><span>{item.quantity}</span><button aria-label={`Add one ${item.name}`} onClick={() => setQuantity(item.name, item.quantity + 1)}>+</button></div><b className="cart-price">{money(item.rate * item.quantity)}</b></div>)}</div>
         <div className="summary-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div><label><span>Discount</span><div className="discount-field"><span>$</span><input type="number" min="0" max={subtotal} value={discount || ""} onChange={(event) => setDiscount(Math.min(subtotal, Number(event.target.value)))} placeholder="0.00" /></div></label><div className="total-line"><span>Total payable</span><b>{money(total)}</b></div></div>
         <label className="field payment-field"><span>Payment method</span><select value={payment} onChange={(event) => setPayment(event.target.value)}><option>Pay at reception</option><option>Cash</option><option>Credit card</option><option>Insurance / TPA</option></select></label>
-        <button className="button button-primary full-button" disabled={!cart.length || !patient.trim() || phone.replace(/\D/g, "").length < 10} onClick={() => onSubmit({ invoice: `INV-${Date.now().toString().slice(-6)}`, date: shortToday, patient: patient.trim(), phone: phone.trim(), total, payment: payment === "Pay at reception" ? "Unpaid" : "Paid", status: "Pending" })}><ClipboardList size={16} /> Generate invoice</button>
-        <small className="invoice-note"><ShieldCheck size={13} /> Demo invoice only; this is not saved.</small>
+        <button className="button button-primary full-button" disabled={saving || loading || !cart.length || !patient.trim() || phone.replace(/\D/g, "").length < 10} onClick={() => void onSubmit({ invoice: `INV-${Date.now().toString(36).toUpperCase()}`, date: shortToday, patient: patient.trim(), phone: phone.trim(), total, discount, items: cart, payment: payment === "Pay at reception" ? "Unpaid" : "Paid", status: "Pending" })}><ClipboardList size={16} /> {loading ? "Loading saved records…" : saving ? "Saving invoice…" : "Generate invoice"}</button>
+        <small className="invoice-note"><ShieldCheck size={13} /> {signedIn ? "This invoice will be saved to your Supabase account." : "Demo invoice only; sign in to save it permanently."}</small>
       </section>
     </aside>
   </div>;
 }
 
-function LabRecordsPage({ orders, onUpdateOrder, search, setSearch, showNotice, changePage }: { orders: LabOrder[]; onUpdateOrder: (invoice: string, field: "payment" | "status") => boolean; search: string; setSearch: (value: string) => void; showNotice: (message: string) => void; changePage: (page: Page) => void }) {
+function LabRecordsPage({ orders, onUpdateOrder, search, setSearch, showNotice, changePage, loading, error }: {
+  orders: LabOrder[];
+  onUpdateOrder: (invoice: string, field: "payment" | "status") => Promise<boolean>;
+  search: string;
+  setSearch: (value: string) => void;
+  showNotice: (message: string) => void;
+  changePage: (page: Page) => void;
+  loading: boolean;
+  error: string;
+}) {
   const [paymentFilter, setPaymentFilter] = useState("All payments");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [pageNumber, setPageNumber] = useState(1);
@@ -774,32 +1084,47 @@ function LabRecordsPage({ orders, onUpdateOrder, search, setSearch, showNotice, 
     pdf.text(`Date: ${order.date}`, 18, 76);
     pdf.text(`Patient: ${order.patient}`, 18, 91);
     pdf.text(`Phone: ${order.phone}`, 18, 100);
+    pdf.setFontSize(9);
+    pdf.text("TESTS", 18, 114);
+    const displayedItems = order.items.slice(0, 4);
+    displayedItems.forEach((item, index) => {
+      pdf.text(`${item.name} x${item.quantity}  ${money(item.rate * item.quantity)}`, 18, 122 + index * 7);
+    });
+    let detailsEndY = 122 + displayedItems.length * 7;
+    if (order.items.length > displayedItems.length) {
+      pdf.text(`And ${order.items.length - displayedItems.length} more test(s)`, 18, detailsEndY);
+      detailsEndY += 7;
+    }
+    pdf.text(`Discount: ${money(order.discount)}`, 18, detailsEndY + 2);
+    const totalY = detailsEndY + 8;
     pdf.setFillColor(244, 248, 252);
-    pdf.roundedRect(18, 116, 174, 28, 3, 3, "F");
+    pdf.roundedRect(18, totalY, 174, 28, 3, 3, "F");
     pdf.setTextColor(105, 121, 137);
     pdf.setFontSize(10);
-    pdf.text("TOTAL DUE", 26, 128);
+    pdf.text("TOTAL DUE", 26, totalY + 12);
     pdf.setTextColor(44, 49, 55);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(16);
-    pdf.text(money(order.total), 26, 138);
+    pdf.text(money(order.total), 26, totalY + 22);
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(10);
-    pdf.text(`Payment: ${order.payment}`, 18, 160);
-    pdf.text(`Order status: ${order.status}`, 18, 169);
+    pdf.text(`Payment: ${order.payment}`, 18, totalY + 41);
+    pdf.text(`Order status: ${order.status}`, 18, totalY + 50);
     pdf.setTextColor(130, 144, 158);
     pdf.setFontSize(9);
-    pdf.text("Thank you for choosing Careflow. Please contact reception with any questions.", 18, 190);
+    pdf.text("Thank you for choosing Careflow. Please contact reception with any questions.", 18, totalY + 70);
     pdf.save(`${order.invoice}.pdf`);
     showNotice("Invoice downloaded");
   };
   return <>
     <div className="dashboard-heading records-heading"><div><h2>Lab order records</h2><p>Manage patient orders, payments, and report status.</p></div><button className="button button-primary" onClick={() => changePage("Take Lab Order")}><Plus size={16} /> New lab order</button></div>
+    {error && <p className="settings-error" role="alert">{error}</p>}
     <div className="records-kpis"><div className="panel records-kpi"><span className="stat-icon blue"><FlaskConical size={17} /></span><div><b>{orders.length}</b><small>Total orders</small></div></div><div className="panel records-kpi"><span className="stat-icon green"><Check size={17} /></span><div><b>{orders.filter((item) => item.status === "Completed").length}</b><small>Completed today</small></div></div><div className="panel records-kpi"><span className="stat-icon purple"><Wallet size={17} /></span><div><b>{money(orders.filter((item) => item.payment !== "Paid").reduce((sum, item) => sum + item.total, 0))}</b><small>Outstanding balance</small></div></div></div>
     <section className="panel records-panel">
       <div className="records-toolbar"><div><h3>All lab orders <span className="table-count">{filtered.length}</span></h3><p>View and update diagnostic orders.</p></div><div className="table-filters"><label className="search-input table-search"><Search size={15} /><input placeholder="Search patient or invoice..." value={search} onChange={(event) => { setSearch(event.target.value); setPageNumber(1); }} /></label><select value={paymentFilter} onChange={(event) => { setPaymentFilter(event.target.value); setPageNumber(1); }} aria-label="Filter payment status"><option>All payments</option><option>Paid</option><option>Unpaid</option><option>Due</option></select><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageNumber(1); }} aria-label="Filter order status"><option>All statuses</option><option>Pending</option><option>Sample Collected</option><option>Completed</option></select></div></div>
-      <div className="table-scroll"><table><thead><tr><th>INVOICE NO.</th><th>DATE</th><th>PATIENT</th><th>SUBTOTAL</th><th>PAYMENT</th><th>ORDER STATUS</th><th /></tr></thead><tbody>{visible.map((order) => <tr key={order.invoice}><td><button className="invoice-link" onClick={() => showNotice(`Order ${order.invoice} · ${order.patient}`)}>{order.invoice}</button></td><td>{order.date}</td><td><div className="patient-cell"><span className="patient-avatar">{order.patient.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{order.patient}</b><small>{order.phone}</small></span></div></td><td><b className="table-total">{money(order.total)}</b></td><td><StatusBadge value={order.payment} /></td><td><StatusBadge value={order.status} /></td><td><div className="row-actions"><button title={order.payment === "Paid" ? "Payment collected" : "Collect payment"} disabled={order.payment === "Paid"} onClick={async () => { if (await onUpdateOrder(order.invoice, "payment")) showNotice(`Payment collected for ${order.invoice}`); }}><Wallet size={15} /></button><button title="Update invoice status" disabled={order.status === "Completed"} onClick={async () => { if (await onUpdateOrder(order.invoice, "status")) showNotice(`Order status updated for ${order.invoice}`); }}><Activity size={15} /></button><button title="Download invoice" onClick={() => downloadInvoice(order)}><Download size={15} /></button></div></td></tr>)}</tbody></table>
-      {visible.length === 0 && <div className="empty-table"><span><Search size={20} /></span><b>No lab orders found</b><p>Try changing your search or filters.</p></div>}
+      <div className="table-scroll"><table><thead><tr><th>INVOICE NO.</th><th>DATE</th><th>PATIENT</th><th>TESTS</th><th>DISCOUNT</th><th>TOTAL</th><th>PAYMENT</th><th>ORDER STATUS</th><th /></tr></thead><tbody>{visible.map((order) => <tr key={order.invoice}><td><button className="invoice-link" onClick={() => showNotice(`${order.invoice}: ${order.items.map((item) => `${item.name} ×${item.quantity}`).join(", ") || "No test details"}`)}>{order.invoice}</button></td><td>{order.date}</td><td><div className="patient-cell"><span className="patient-avatar">{order.patient.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{order.patient}</b><small>{order.phone}</small></span></div></td><td>{order.items.map((item) => `${item.name} ×${item.quantity}`).join(", ") || "—"}</td><td>{money(order.discount)}</td><td><b className="table-total">{money(order.total)}</b></td><td><StatusBadge value={order.payment} /></td><td><StatusBadge value={order.status} /></td><td><div className="row-actions"><button title={order.payment === "Paid" ? "Payment collected" : "Collect payment"} disabled={order.payment === "Paid"} onClick={async () => { if (await onUpdateOrder(order.invoice, "payment")) showNotice(`Payment collected for ${order.invoice}`); }}><Wallet size={15} /></button><button title="Update invoice status" disabled={order.status === "Completed"} onClick={async () => { if (await onUpdateOrder(order.invoice, "status")) showNotice(`Order status updated for ${order.invoice}`); }}><Activity size={15} /></button><button title="Download invoice" onClick={() => downloadInvoice(order)}><Download size={15} /></button></div></td></tr>)}</tbody></table>
+      {loading && <div className="empty-table"><RefreshCw className="spin" size={20} /><b>Loading saved lab orders…</b></div>}
+      {!loading && visible.length === 0 && <div className="empty-table"><span><Search size={20} /></span><b>No lab orders found</b><p>Try changing your search or filters.</p></div>}
       </div>
       <div className="table-footer"><span>Showing <b>{filtered.length ? start + 1 : 0}–{Math.min(start + 5, filtered.length)}</b> of <b>{filtered.length}</b> orders</span><div><button aria-label="Previous page" disabled={pageNumber === 1} onClick={() => setPageNumber((value) => Math.max(1, value - 1))}><ChevronLeft size={16} /></button><button className="page-current">{pageNumber}</button><button aria-label="Next page" disabled={start + 5 >= filtered.length} onClick={() => setPageNumber((value) => value + 1)}><ChevronRight size={16} /></button></div></div>
     </section>
@@ -875,7 +1200,7 @@ function HospitalSettingsPage({ settings, onSave, showNotice, saving, loading, s
           {form.logoDataUrl && <button className="settings-remove-logo" type="button" onClick={() => setForm((current) => ({ ...current, logoDataUrl: "" }))}>Remove logo</button>}
         </div>
       </div>
-      <div className="settings-actions"><span>{signedIn ? "Settings are saved to your Supabase account. Patient and lab records are still demo-only." : "Sign in to save settings to Supabase. Demo changes reset when you reload."}</span><button className="button button-primary" type={signedIn ? "submit" : "button"} onClick={signedIn ? undefined : onSignIn} disabled={saving || loading}><Check size={17} /> {saving ? "Saving…" : signedIn ? "Save settings" : "Sign in to save"}</button></div>
+      <div className="settings-actions"><span>{signedIn ? "Settings, patient records, lab orders, and appointments are saved to your Supabase account." : "Sign in to save settings, patient records, lab orders, and appointments to Supabase. Demo changes reset when you reload."}</span><button className="button button-primary" type={signedIn ? "submit" : "button"} onClick={signedIn ? undefined : onSignIn} disabled={saving || loading}><Check size={17} /> {saving ? "Saving…" : signedIn ? "Save settings" : "Sign in to save"}</button></div>
     </form>
   </div>;
 }

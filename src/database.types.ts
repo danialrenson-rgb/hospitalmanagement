@@ -1,3 +1,11 @@
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 export type Database = {
   public: {
     Tables: {
@@ -83,6 +91,8 @@ export type Database = {
           patient: string;
           phone: string;
           total: number;
+          discount: number;
+          items: Json;
           payment: string;
           status: string;
           created_at: string;
@@ -94,6 +104,8 @@ export type Database = {
           patient: string;
           phone: string;
           total: number;
+          discount?: number;
+          items?: Json;
           payment: string;
           status: string;
           created_at?: string;
@@ -103,8 +115,55 @@ export type Database = {
           patient?: string;
           phone?: string;
           total?: number;
+          discount?: number;
+          items?: Json;
           payment?: string;
           status?: string;
+        };
+        Relationships: [];
+      };
+      appointments: {
+        Row: {
+          id: string;
+          owner_id: string;
+          patient_name: string;
+          phone: string;
+          age_years: number;
+          age_months: number;
+          age_days: number;
+          gender: string;
+          doctor: string;
+          visit_date: string;
+          consultation_type: string;
+          fee: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id?: string;
+          patient_name: string;
+          phone: string;
+          age_years?: number;
+          age_months?: number;
+          age_days?: number;
+          gender?: string;
+          doctor: string;
+          visit_date: string;
+          consultation_type: string;
+          fee: number;
+          created_at?: string;
+        };
+        Update: {
+          patient_name?: string;
+          phone?: string;
+          age_years?: number;
+          age_months?: number;
+          age_days?: number;
+          gender?: string;
+          doctor?: string;
+          visit_date?: string;
+          consultation_type?: string;
+          fee?: number;
         };
         Relationships: [];
       };
