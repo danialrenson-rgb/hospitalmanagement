@@ -11,7 +11,8 @@ import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
-import { checkDatabaseConnection } from "./supabase";
+import type { Session } from "@supabase/supabase-js";
+import { checkDatabaseConnection, getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 type Page = "Dashboard" | "Take New Appointment" | "Take Lab Order" | "Lab Order Records" | "Prescription" | "App Users" | "Master Data" | "Database Status" | "Patients & EMR" | "Doctor Scheduling" | "IPD & Bed Management" | "Billing & Invoicing" | "Pharmacy & Inventory" | "Reports & Analytics" | "Emergency & Casualty" | "Radiology & Imaging" | "Operation Theatre" | "Nurse Station" | "Blood Bank" | "Ambulance & Transport" | "HR & Payroll" | "Accounts & Finance" | "Notifications" | "Patient Portal" | "Queue Display" | "Audit & Security" | "Branches & Languages";
 type LabStatus = "Pending" | "Sample Collected" | "Completed";
@@ -136,6 +137,9 @@ function App() {
 }
 
 function HospitalWorkspace() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [demoMode, setDemoMode] = useState(!isSupabaseConfigured);
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayInput);
@@ -145,13 +149,97 @@ function HospitalWorkspace() {
   const [orders, setOrders] = useState<LabOrder[]>(initialOrders);
   const [patients, setPatients] = useState<PatientRecord[]>(initialPatients);
   const [hospitalSettings, setHospitalSettings] = useState(defaultHospitalSettings);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [selectedRange, setSelectedRange] = useState("This week");
 
-  const showNotice = (message: string) => {
+  const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 3200);
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    let active = true;
+    const client = getSupabaseClient();
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return;
+      setSession(nextSession);
+      if (nextSession) setDemoMode(false);
+    });
+
+    void client.auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      if (!active) return;
+      setSession(data.session);
+      setAuthLoading(false);
+    }).catch((error: unknown) => {
+      console.error("Could not restore the Supabase session:", error);
+      if (!active) return;
+      setSettingsError("Could not restore your sign-in session. Please sign in again.");
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const userId = session?.user.id;
+  useEffect(() => {
+    if (!userId) {
+      setHospitalSettings(defaultHospitalSettings);
+      setSettingsLoading(false);
+      setSettingsError("");
+      return;
+    }
+
+    let active = true;
+    setSettingsLoading(true);
+    setSettingsError("");
+    void (async () => {
+      try {
+        const { data, error } = await getSupabaseClient()
+          .from("hospital_settings")
+          .select("hospital_name, username, logo_data_url")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (error) throw error;
+        if (active && data) {
+          setHospitalSettings({
+            hospitalName: data.hospital_name,
+            username: data.username,
+            logoDataUrl: data.logo_data_url,
+          });
+        }
+      } catch (error) {
+        console.error("Could not load hospital settings from Supabase:", error);
+        if (active) setSettingsError("Could not load your saved hospital settings. Check the database setup and try again.");
+      } finally {
+        if (active) setSettingsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  const signOut = async () => {
+    try {
+      const { error } = await getSupabaseClient().auth.signOut();
+      if (error) throw error;
+      setDemoMode(false);
+      showNotice("You have signed out.");
+    } catch (error) {
+      console.error("Could not sign out of Supabase:", error);
+      showNotice("Could not sign out. Please try again.");
+    }
   };
   const changePage = (next: Page) => {
     setPage(next);
@@ -181,10 +269,41 @@ function HospitalWorkspace() {
     showNotice(`${patient.name} was removed from the demo`);
     return true;
   };
-  const saveHospitalSettings = (settings: HospitalSettings) => {
-    setHospitalSettings(settings);
-    showNotice("Demo settings updated (not saved)");
+  const saveHospitalSettings = async (settings: HospitalSettings) => {
+    if (!session) {
+      showNotice("Sign in to save settings to Supabase.");
+      return;
+    }
+
+    setSettingsSaving(true);
+    setSettingsError("");
+    try {
+      const { error } = await getSupabaseClient()
+        .from("hospital_settings")
+        .upsert({
+          user_id: session.user.id,
+          hospital_name: settings.hospitalName,
+          username: settings.username,
+          logo_data_url: settings.logoDataUrl,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+      if (error) throw error;
+      setHospitalSettings(settings);
+      showNotice("Hospital settings saved to Supabase.");
+    } catch (error) {
+      console.error("Could not save hospital settings to Supabase:", error);
+      setSettingsError("Could not save settings to Supabase. Check your connection and account permissions, then try again.");
+    } finally {
+      setSettingsSaving(false);
+    }
   };
+
+  if (authLoading) {
+    return <div className="auth-screen"><section className="panel auth-panel"><RefreshCw className="spin" size={22} /><p>Checking your Supabase sign-in…</p></section></div>;
+  }
+  if (isSupabaseConfigured && !session && !demoMode) {
+    return <AuthScreen onContinueDemo={() => { setDemoMode(true); setSettingsError(""); }} initialMessage={settingsError} />;
+  }
 
   return (
     <div className={`app-shell${dark ? " dark" : ""}`}>
@@ -231,8 +350,8 @@ function HospitalWorkspace() {
             <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={19} /><i /></button>
             <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={19} /></button>
-            <button className="profile-button" onClick={() => showNotice("Demo mode · changes are temporary")}>
-              <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Demo user</small></span><ChevronDown size={15} />
+            <button className="profile-button" onClick={() => { if (session) void signOut(); else setDemoMode(false); }}>
+              <span className="avatar">{getInitials(session ? hospitalSettings.username : "Demo user")}</span><span className="profile-copy"><b>{session ? hospitalSettings.username : "Demo user"}</b><small>{session ? "Sign out" : isSupabaseConfigured ? "Sign in to save" : "Demo mode"}</small></span><ChevronDown size={15} />
             </button>
           </div>
         </header>
@@ -257,17 +376,67 @@ function HospitalWorkspace() {
             {page === "Take New Appointment" && <AppointmentPage onSubmit={() => { showNotice("Appointment confirmed and token assigned"); changePage("Dashboard"); }} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} />}
-            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} />}
+            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn={Boolean(session)} error={settingsError} onSignIn={() => setDemoMode(false)} />}
             {page === "Database Status" && <DatabaseStatusPage />}
             {!["Dashboard", "Patients & EMR", "Take New Appointment", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
         </AnimatePresence>
         </main>
-        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> Demo data only · changes reset on reload</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
+        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> {session ? "Patient and lab records are demo data" : "Demo data only · changes reset on reload"}</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
       </div>
       <AnimatePresence>{notice && <motion.div className="toast" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}><span className="toast-check"><Check size={15} /></span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}</AnimatePresence>
     </div>
   );
+}
+
+function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => void; initialMessage: string }) {
+  const [mode, setMode] = useState<"sign_in" | "sign_up">("sign_in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState(initialMessage);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getSupabaseClient();
+      if (mode === "sign_up") {
+        const { data, error } = await client.auth.signUp({ email: email.trim(), password });
+        if (error) throw error;
+        if (!data.session) {
+          setMessage("Account created. Check your email to confirm the account, then sign in.");
+        }
+      } else {
+        const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
+        if (error) throw error;
+      }
+    } catch (error) {
+      console.error("Supabase authentication failed:", error);
+      setMessage(error instanceof Error ? error.message : "Could not sign in. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="app-shell dark auth-screen">
+    <section className="panel auth-panel">
+      <div className="auth-brand"><span className="brand-mark"><Activity size={20} /></span><span>Careflow Hospital</span></div>
+      <h1>{mode === "sign_in" ? "Sign in to your workspace" : "Create your account"}</h1>
+      <p className="auth-description">Sign in to save hospital settings to your Supabase account. Patient and lab records remain demo data.</p>
+      <form className="auth-form" onSubmit={(event) => void submit(event)}>
+        <label className="settings-field"><span>Email</span><input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
+        <label className="settings-field"><span>Password</span><input type="password" autoComplete={mode === "sign_in" ? "current-password" : "new-password"} minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>
+        {message && <p className="auth-message" role="alert">{message}</p>}
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "sign_in" ? "Sign in" : "Create account"}</button>
+      </form>
+      <button className="auth-mode-toggle" type="button" onClick={() => { setMode(mode === "sign_in" ? "sign_up" : "sign_in"); setMessage(""); }}>
+        {mode === "sign_in" ? "New here? Create an account" : "Already have an account? Sign in"}
+      </button>
+      <button className="button button-outline auth-demo-button" type="button" onClick={onContinueDemo}>Continue in demo mode</button>
+    </section>
+  </div>;
 }
 
 function DatabaseStatusPage() {
@@ -288,14 +457,10 @@ function DatabaseStatusPage() {
   }, [runCheck]);
 
   const statusLabel = checking ? "Checking connection" : result?.status === "connected"
-    ? "Connected"
-    : result?.status === "restricted"
-      ? "Connected · access restricted"
-      : result?.status === "schema_missing"
-        ? "Connected · setup required"
-        : result?.status === "not_configured"
-          ? "Not configured"
-          : "Not connected";
+    ? "Supabase reachable"
+    : result?.status === "not_configured"
+      ? "Not configured"
+      : "Not connected";
 
   return <div className="database-status-page">
     <div className="dashboard-heading">
@@ -306,15 +471,15 @@ function DatabaseStatusPage() {
     </div>
     <section className="panel database-status-panel">
       <div className={`database-status-indicator ${checking ? "checking" : result?.status ?? "disconnected"}`} aria-live="polite">
-        <span className="database-status-icon">{checking ? <RefreshCw size={22} className="spin" /> : result?.status === "connected" ? <Check size={22} /> : result?.status === "restricted" ? <ShieldCheck size={22} /> : <X size={22} />}</span>
+        <span className="database-status-icon">{checking ? <RefreshCw size={22} className="spin" /> : result?.status === "connected" ? <Check size={22} /> : <X size={22} />}</span>
         <div><h3>{statusLabel}</h3><p>{checking ? "Sending a safe connection check to Supabase…" : result?.message}</p></div>
       </div>
       <div className="database-status-details">
-        <div><Database size={17} /><span><b>Service</b><small>Supabase PostgREST API</small></span></div>
-        <div><ShieldCheck size={17} /><span><b>Data access</b><small>No patient records are read by this check.</small></span></div>
+        <div><Database size={17} /><span><b>Service</b><small>Supabase Auth API</small></span></div>
+        <div><ShieldCheck size={17} /><span><b>Data access</b><small>Database tables and patient records are not checked.</small></span></div>
         {checkedAt && <div><RefreshCw size={17} /><span><b>Last checked</b><small>{checkedAt.toLocaleTimeString()}</small></span></div>}
       </div>
-      <p className="database-status-note">This app is currently in no-login demo mode. A successful connection check does not enable saving patient data; the database’s access policies remain in force.</p>
+      <p className="database-status-note">This check confirms the Supabase Auth API is reachable; it does not verify database tables. Signed-in users can save workspace settings, while patient and lab records remain demo data.</p>
     </section>
   </div>;
 }
@@ -646,8 +811,18 @@ function StatusBadge({ value }: { value: PaymentStatus | LabStatus | PatientStat
   return <span className={`status-badge ${className}`}><i />{value}</span>;
 }
 
-function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: HospitalSettings; onSave: (settings: HospitalSettings) => void; showNotice: (message: string) => void }) {
+function HospitalSettingsPage({ settings, onSave, showNotice, saving, loading, signedIn, error, onSignIn }: {
+  settings: HospitalSettings;
+  onSave: (settings: HospitalSettings) => Promise<void>;
+  showNotice: (message: string) => void;
+  saving: boolean;
+  loading: boolean;
+  signedIn: boolean;
+  error: string;
+  onSignIn: () => void;
+}) {
   const [form, setForm] = useState(settings);
+  useEffect(() => setForm(settings), [settings]);
   const updateField = (field: "hospitalName" | "username", value: string) => setForm((current) => ({ ...current, [field]: value }));
   const handleLogoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -677,8 +852,7 @@ function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: Hosp
   const save = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const updatedSettings = { ...form, hospitalName: form.hospitalName.trim(), username: form.username.trim() };
-    setForm(updatedSettings);
-    onSave(updatedSettings);
+    void onSave(updatedSettings);
   };
 
   return <div className="settings-page">
@@ -687,6 +861,8 @@ function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: Hosp
     </div>
     <form className="panel settings-panel" onSubmit={save}>
       <div className="settings-section-heading"><span className="stat-icon blue"><Settings size={19} /></span><div><h3>Workspace identity</h3><p>These details appear across your hospital dashboard.</p></div></div>
+      {loading && <p className="settings-feedback">Loading your saved settings…</p>}
+      {error && <p className="settings-error" role="alert">{error}</p>}
       <div className="settings-fields">
         <label className="settings-field"><span>Hospital name</span><input required maxLength={80} value={form.hospitalName} onChange={(event) => updateField("hospitalName", event.target.value)} placeholder="Enter hospital name" /></label>
         <label className="settings-field"><span>Username</span><input required maxLength={60} value={form.username} onChange={(event) => updateField("username", event.target.value)} placeholder="Enter your name" /></label>
@@ -699,7 +875,7 @@ function HospitalSettingsPage({ settings, onSave, showNotice }: { settings: Hosp
           {form.logoDataUrl && <button className="settings-remove-logo" type="button" onClick={() => setForm((current) => ({ ...current, logoDataUrl: "" }))}>Remove logo</button>}
         </div>
       </div>
-      <div className="settings-actions"><span>Demo changes are temporary and reset when you reload.</span><button className="button button-primary" type="submit"><Check size={17} /> Save settings</button></div>
+      <div className="settings-actions"><span>{signedIn ? "Settings are saved to your Supabase account. Patient and lab records are still demo-only." : "Sign in to save settings to Supabase. Demo changes reset when you reload."}</span><button className="button button-primary" type={signedIn ? "submit" : "button"} onClick={signedIn ? undefined : onSignIn} disabled={saving || loading}><Check size={17} /> {saving ? "Saving…" : signedIn ? "Save settings" : "Sign in to save"}</button></div>
     </form>
   </div>;
 }

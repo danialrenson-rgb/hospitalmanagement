@@ -45,20 +45,45 @@ alter table public.hospital_settings enable row level security;
 alter table public.patients enable row level security;
 alter table public.lab_orders enable row level security;
 
-create policy "Users manage their own hospital settings"
-  on public.hospital_settings for all to authenticated
-  using ((select auth.uid()) = user_id)
-  with check ((select auth.uid()) = user_id);
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'hospital_settings'
+      and policyname = 'Users manage their own hospital settings'
+  ) then
+    execute 'create policy "Users manage their own hospital settings"
+      on public.hospital_settings for all to authenticated
+      using ((select auth.uid()) = user_id)
+      with check ((select auth.uid()) = user_id)';
+  end if;
 
-create policy "Users manage their own patients"
-  on public.patients for all to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'patients'
+      and policyname = 'Users manage their own patients'
+  ) then
+    execute 'create policy "Users manage their own patients"
+      on public.patients for all to authenticated
+      using ((select auth.uid()) = owner_id)
+      with check ((select auth.uid()) = owner_id)';
+  end if;
 
-create policy "Users manage their own lab orders"
-  on public.lab_orders for all to authenticated
-  using ((select auth.uid()) = owner_id)
-  with check ((select auth.uid()) = owner_id);
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'lab_orders'
+      and policyname = 'Users manage their own lab orders'
+  ) then
+    execute 'create policy "Users manage their own lab orders"
+      on public.lab_orders for all to authenticated
+      using ((select auth.uid()) = owner_id)
+      with check ((select auth.uid()) = owner_id)';
+  end if;
+end
+$$;
 
 revoke all on public.hospital_settings, public.patients, public.lab_orders from anon, public;
 grant select, insert, update, delete on public.hospital_settings, public.patients, public.lab_orders to authenticated;
