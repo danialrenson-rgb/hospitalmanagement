@@ -390,7 +390,7 @@ function HospitalWorkspace() {
         showNotice("Lab order saved to Supabase.");
       } else {
         setOrders((current) => [order, ...current]);
-        showNotice("Demo lab order created. Sign in to save it permanently.");
+        showNotice("Lab order created for this session.");
       }
       changePage("Lab Order Records");
     } catch (error) {
@@ -440,7 +440,7 @@ function HospitalWorkspace() {
         showNotice("Appointment saved to Supabase.");
       } else {
         setAppointments((current) => [{ ...appointment, id: crypto.randomUUID() }, ...current]);
-        showNotice("Demo appointment confirmed. Sign in to save it permanently.");
+        showNotice("Appointment confirmed for this session.");
       }
       changePage("Doctor Scheduling");
     } catch (error) {
@@ -474,7 +474,7 @@ function HospitalWorkspace() {
       }
     }
     setOrders((current) => current.map((order) => order.invoice === invoice ? updatedOrder : order));
-    if (!session) showNotice("Demo order updated. Sign in to save changes permanently.");
+    if (!session) showNotice("Order updated for this session.");
     return true;
   };
   const deletePatient = async (patientId: string) => {
@@ -498,13 +498,13 @@ function HospitalWorkspace() {
       }
     }
     setPatients((current) => current.filter((record) => record.id !== patientId));
-    showNotice(session ? `${patient.name} was deleted from Supabase.` : `${patient.name} was removed from the demo.`);
+    showNotice(session ? `${patient.name} was deleted from Supabase.` : `${patient.name} was removed for this session.`);
     return true;
   };
   const saveHospitalSettings = async (settings: HospitalSettings) => {
     if (!session) {
       setHospitalSettings(settings);
-      showNotice("Hospital settings saved for this demo session.");
+      showNotice("Hospital settings saved for this session.");
       return;
     }
 
@@ -598,12 +598,12 @@ function HospitalWorkspace() {
         <AnimatePresence mode="wait">
           <motion.div key={page} className="page-transition" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
             {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} patients={patients} />}
-            {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} loading={recordsLoading} error={recordsError} signedIn={Boolean(session)} />}
+            {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} loading={recordsLoading} error={recordsError} />}
             {page === "Take New Appointment" && <AppointmentPage onSubmit={addAppointment} saving={appointmentSaving} loading={recordsLoading} error={recordsError} />}
-            {page === "Doctor Scheduling" && <AppointmentRecordsPage appointments={appointments} loading={recordsLoading} error={recordsError} changePage={changePage} signedIn={Boolean(session)} />}
-            {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} saving={orderSaving} loading={recordsLoading} signedIn={Boolean(session)} error={recordsError} />}
+            {page === "Doctor Scheduling" && <AppointmentRecordsPage appointments={appointments} loading={recordsLoading} error={recordsError} changePage={changePage} />}
+            {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} saving={orderSaving} loading={recordsLoading} error={recordsError} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} loading={recordsLoading} error={recordsError} />}
-            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn error={settingsError} onSignIn={() => undefined} />}
+            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} error={settingsError} />}
             {page === "Database Status" && <DatabaseStatusPage />}
             {!["Dashboard", "Patients & EMR", "Take New Appointment", "Doctor Scheduling", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
@@ -805,13 +805,12 @@ function StatCard({ title, value, change, trend, icon, color, detail, action }: 
   </motion.section>;
 }
 
-function PatientDirectory({ patients, onDeletePatient, onNewAppointment, loading, error, signedIn }: {
+function PatientDirectory({ patients, onDeletePatient, onNewAppointment, loading, error }: {
   patients: PatientRecord[];
   onDeletePatient: (patientId: string) => Promise<boolean>;
   onNewAppointment: () => void;
   loading: boolean;
   error: string;
-  signedIn: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All patients");
@@ -888,7 +887,7 @@ function PatientDirectory({ patients, onDeletePatient, onNewAppointment, loading
         </> : <div className="patient-empty"><Users size={22} /><b>Select a patient</b><span>Patient details will appear here.</span></div>}
       </aside>
     </div>
-    <p className="patient-demo-note"><ShieldCheck size={14} /> {signedIn ? "Patient records are loaded from your Supabase account." : "Demo patient information only. Sign in to load records from your Supabase account."} Do not enter real patient information in demo mode.</p>
+    <p className="patient-demo-note"><ShieldCheck size={14} /> Patient records are loaded from your Supabase account.</p>
   </div>;
 }
 
@@ -952,12 +951,11 @@ function AppointmentPage({ onSubmit, saving, loading, error }: {
 
 function TicketIcon() { return <span className="ticket-glyph">#</span>; }
 
-function AppointmentRecordsPage({ appointments, loading, error, changePage, signedIn }: {
+function AppointmentRecordsPage({ appointments, loading, error, changePage }: {
   appointments: AppointmentRecord[];
   loading: boolean;
   error: string;
   changePage: (page: Page) => void;
-  signedIn: boolean;
 }) {
   return <>
     <div className="dashboard-heading records-heading">
@@ -966,7 +964,7 @@ function AppointmentRecordsPage({ appointments, loading, error, changePage, sign
     </div>
     {error && <p className="settings-error" role="alert">{error}</p>}
     <section className="panel records-panel">
-      <div className="records-toolbar"><div><h3>All appointments <span className="table-count">{appointments.length}</span></h3><p>{signedIn ? "Appointments are saved to your Supabase account." : "Demo appointments reset when you reload. Sign in to save them."}</p></div></div>
+      <div className="records-toolbar"><div><h3>All appointments <span className="table-count">{appointments.length}</span></h3><p>Appointments are saved to your Supabase account.</p></div></div>
       <div className="table-scroll"><table><thead><tr><th>PATIENT</th><th>PHONE</th><th>DOCTOR</th><th>VISIT DATE</th><th>CONSULTATION</th><th>FEE</th></tr></thead><tbody>
         {appointments.map((appointment) => <tr key={appointment.id}>
           <td><div className="patient-cell"><span className="patient-avatar">{appointment.patientName.split(" ").map((word) => word[0]).slice(0, 2).join("")}</span><span><b>{appointment.patientName}</b><small>{[appointment.ageYears && `${appointment.ageYears} yrs`, appointment.gender].filter(Boolean).join(" · ") || "Age and gender not provided"}</small></span></div></td>
@@ -980,7 +978,7 @@ function AppointmentRecordsPage({ appointments, loading, error, changePage, sign
   </>;
 }
 
-function LabOrderPage({ onSubmit, saving, loading, signedIn, error }: { onSubmit: (order: LabOrder) => Promise<void>; saving: boolean; loading: boolean; signedIn: boolean; error: string }) {
+function LabOrderPage({ onSubmit, saving, loading, error }: { onSubmit: (order: LabOrder) => Promise<void>; saving: boolean; loading: boolean; error: string }) {
   const [source, setSource] = useState("New Patient");
   const [category, setCategory] = useState("All services");
   const [query, setQuery] = useState("");
@@ -1024,7 +1022,7 @@ function LabOrderPage({ onSubmit, saving, loading, signedIn, error }: { onSubmit
         <div className="summary-totals"><div><span>Subtotal</span><b>{money(subtotal)}</b></div><label><span>Discount</span><div className="discount-field"><span>$</span><input type="number" min="0" max={subtotal} value={discount || ""} onChange={(event) => setDiscount(Math.min(subtotal, Number(event.target.value)))} placeholder="0.00" /></div></label><div className="total-line"><span>Total payable</span><b>{money(total)}</b></div></div>
         <label className="field payment-field"><span>Payment method</span><select value={payment} onChange={(event) => setPayment(event.target.value)}><option>Pay at reception</option><option>Cash</option><option>Credit card</option><option>Insurance / TPA</option></select></label>
         <button className="button button-primary full-button" disabled={saving || loading || !cart.length || !patient.trim() || phone.replace(/\D/g, "").length < 10} onClick={() => void onSubmit({ invoice: `INV-${Date.now().toString(36).toUpperCase()}`, date: shortToday, patient: patient.trim(), phone: phone.trim(), total, discount, items: cart, payment: payment === "Pay at reception" ? "Unpaid" : "Paid", status: "Pending" })}><ClipboardList size={16} /> {loading ? "Loading saved records…" : saving ? "Saving invoice…" : "Generate invoice"}</button>
-        <small className="invoice-note"><ShieldCheck size={13} /> {signedIn ? "This invoice will be saved to your Supabase account." : "Demo invoice only; sign in to save it permanently."}</small>
+        <small className="invoice-note"><ShieldCheck size={13} /> This invoice will be saved to your Supabase account.</small>
       </section>
     </aside>
   </div>;
@@ -1122,15 +1120,13 @@ function StatusBadge({ value }: { value: PaymentStatus | LabStatus | PatientStat
   return <span className={`status-badge ${className}`}><i />{value}</span>;
 }
 
-function HospitalSettingsPage({ settings, onSave, showNotice, saving, loading, signedIn, error, onSignIn }: {
+function HospitalSettingsPage({ settings, onSave, showNotice, saving, loading, error }: {
   settings: HospitalSettings;
   onSave: (settings: HospitalSettings) => Promise<void>;
   showNotice: (message: string) => void;
   saving: boolean;
   loading: boolean;
-  signedIn: boolean;
   error: string;
-  onSignIn: () => void;
 }) {
   const [form, setForm] = useState(settings);
   useEffect(() => setForm(settings), [settings]);
@@ -1186,7 +1182,7 @@ function HospitalSettingsPage({ settings, onSave, showNotice, saving, loading, s
           {form.logoDataUrl && <button className="settings-remove-logo" type="button" onClick={() => setForm((current) => ({ ...current, logoDataUrl: "" }))}>Remove logo</button>}
         </div>
       </div>
-      <div className="settings-actions"><span>{signedIn ? "Settings, patient records, lab orders, and appointments are saved to your Supabase account." : "Sign in to save settings, patient records, lab orders, and appointments to Supabase. Demo changes reset when you reload."}</span><button className="button button-primary" type={signedIn ? "submit" : "button"} onClick={signedIn ? undefined : onSignIn} disabled={saving || loading}><Check size={17} /> {saving ? "Saving…" : signedIn ? "Save settings" : "Sign in to save"}</button></div>
+      <div className="settings-actions"><span>Settings, patient records, lab orders, and appointments are saved to your Supabase account.</span><button className="button button-primary" type="submit" disabled={saving || loading}><Check size={17} /> {saving ? "Saving…" : "Save settings"}</button></div>
     </form>
   </div>;
 }
