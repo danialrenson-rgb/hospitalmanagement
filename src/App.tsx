@@ -111,26 +111,6 @@ const navigation: { name: string; icon: typeof LayoutDashboard; items?: Page[] }
   { name: "More", icon: MoreHorizontal, items: ["IPD & Bed Management", "Billing & Invoicing", "Pharmacy & Inventory", "Reports & Analytics", "Emergency & Casualty", "Radiology & Imaging", "Operation Theatre", "Nurse Station", "Blood Bank", "Ambulance & Transport", "HR & Payroll", "Accounts & Finance", "Notifications", "Patient Portal", "Queue Display", "Audit & Security", "Branches & Languages"] },
 ];
 
-const initialPatients: PatientRecord[] = [
-  { id: "CF-10482", name: "Olivia Rhye", age: 32, gender: "Female", phone: "+1 202 555 0148", email: "olivia.rhye@example.com", bloodGroup: "O+", department: "Cardiology", doctor: "Dr. Sarah Chen", lastVisit: formatSeedDate(0), status: "In treatment", diagnosis: "Arrhythmia follow-up", allergies: "Penicillin" },
-  { id: "CF-10481", name: "Phoenix Baker", age: 45, gender: "Male", phone: "+1 202 555 0172", email: "phoenix.baker@example.com", bloodGroup: "A+", department: "General Medicine", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Admitted", diagnosis: "Post-operative observation", allergies: "No known allergies" },
-  { id: "CF-10480", name: "Lana Steiner", age: 28, gender: "Female", phone: "+1 202 555 0194", email: "lana.steiner@example.com", bloodGroup: "B+", department: "Neurology", doctor: "Dr. Aisha Patel", lastVisit: formatSeedDate(1), status: "Scheduled", diagnosis: "Migraine assessment", allergies: "No known allergies" },
-  { id: "CF-10479", name: "Demi Wilkinson", age: 51, gender: "Female", phone: "+1 202 555 0186", email: "demi.wilkinson@example.com", bloodGroup: "AB+", department: "Cardiology", doctor: "Dr. Sarah Chen", lastVisit: formatSeedDate(0), status: "Discharged", diagnosis: "Hypertension review", allergies: "Latex" },
-  { id: "CF-10478", name: "Candice Wu", age: 37, gender: "Female", phone: "+1 202 555 0129", email: "candice.wu@example.com", bloodGroup: "O-", department: "Pediatrics", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(2), status: "In treatment", diagnosis: "Routine wellness visit", allergies: "No known allergies" },
-  { id: "CF-10477", name: "Natali Craig", age: 63, gender: "Female", phone: "+1 202 555 0163", email: "natali.craig@example.com", bloodGroup: "A-", department: "General Medicine", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Admitted", diagnosis: "Type 2 diabetes management", allergies: "Sulfa drugs" },
-  { id: "CF-10476", name: "Drew Cano", age: 40, gender: "Male", phone: "+1 202 555 0135", email: "drew.cano@example.com", bloodGroup: "B-", department: "Neurology", doctor: "Dr. Aisha Patel", lastVisit: formatSeedDate(3), status: "Discharged", diagnosis: "Peripheral neuropathy review", allergies: "No known allergies" },
-  { id: "CF-10475", name: "Andi Lane", age: 24, gender: "Non-binary", phone: "+1 202 555 0191", email: "andi.lane@example.com", bloodGroup: "O+", department: "Pediatrics", doctor: "Dr. James Wilson", lastVisit: formatSeedDate(0), status: "Scheduled", diagnosis: "Preventive health visit", allergies: "Peanuts" },
-];
-
-const initialOrders: LabOrder[] = [
-  { invoice: "INV-240518", date: formatSeedDate(0), patient: "Olivia Rhye", phone: "+1 202 555 0148", total: 185, discount: 0, items: [], payment: "Paid", status: "Completed" },
-  { invoice: "INV-240517", date: formatSeedDate(0), patient: "Phoenix Baker", phone: "+1 202 555 0172", total: 320, discount: 0, items: [], payment: "Due", status: "Sample Collected" },
-  { invoice: "INV-240516", date: formatSeedDate(1), patient: "Lana Steiner", phone: "+1 202 555 0194", total: 95, discount: 0, items: [], payment: "Unpaid", status: "Pending" },
-  { invoice: "INV-240515", date: formatSeedDate(1), patient: "Demi Wilkinson", phone: "+1 202 555 0186", total: 240, discount: 0, items: [], payment: "Paid", status: "Completed" },
-  { invoice: "INV-240514", date: formatSeedDate(2), patient: "Candice Wu", phone: "+1 202 555 0129", total: 155, discount: 0, items: [], payment: "Due", status: "Pending" },
-  { invoice: "INV-240513", date: formatSeedDate(2), patient: "Natali Craig", phone: "+1 202 555 0163", total: 410, discount: 0, items: [], payment: "Paid", status: "Sample Collected" },
-];
-
 const revenueData = [
   { day: "Mon", revenue: 4200, expense: 2600 }, { day: "Tue", revenue: 5100, expense: 3100 },
   { day: "Wed", revenue: 4600, expense: 2800 }, { day: "Thu", revenue: 6200, expense: 3900 },
@@ -173,14 +153,16 @@ function App() {
 
 function HospitalWorkspace() {
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
+  const [authError, setAuthError] = useState("");
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayInput);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [mobileNav, setMobileNav] = useState(false);
-  const [orders, setOrders] = useState<LabOrder[]>(initialOrders);
-  const [patients, setPatients] = useState<PatientRecord[]>(initialPatients);
+  const [orders, setOrders] = useState<LabOrder[]>([]);
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState("");
@@ -213,10 +195,12 @@ function HospitalWorkspace() {
       if (error) throw error;
       if (!active) return;
       setSession(data.session);
+      setAuthReady(true);
     }).catch((error: unknown) => {
       console.error("Could not restore the Supabase session:", error);
       if (!active) return;
-      setSettingsError("Could not restore your Supabase session. You can continue in demo mode.");
+      setAuthError("Could not restore your session. Check your connection and try again.");
+      setAuthReady(true);
     });
 
     return () => {
@@ -228,8 +212,8 @@ function HospitalWorkspace() {
   const userId = session?.user.id;
   useEffect(() => {
     if (!userId) {
-      setPatients(initialPatients);
-      setOrders(initialOrders);
+      setPatients([]);
+      setOrders([]);
       setAppointments([]);
       setRecordsLoading(false);
       setRecordsError("");
@@ -358,6 +342,18 @@ function HospitalWorkspace() {
       active = false;
     };
   }, [userId]);
+
+  if (!isSupabaseConfigured) {
+    return <AuthScreen initialMessage="This deployment is not connected to Supabase. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild." />;
+  }
+
+  if (!authReady) {
+    return <div className="app-shell dark auth-screen"><div className="panel auth-panel"><RefreshCw className="spin" size={24} /><p className="auth-description">Loading your secure workspace…</p></div></div>;
+  }
+
+  if (!session) {
+    return <AuthScreen initialMessage={authError} />;
+  }
 
   const signOut = async () => {
     try {
@@ -567,7 +563,7 @@ function HospitalWorkspace() {
             })}
           </div>
         </nav>
-        <div className="sidebar-security"><ShieldCheck size={17} /><span><b>{session ? "Connected workspace" : "Demo workspace"}</b><small>{session ? "Supabase data enabled" : "Sample data only"}</small></span><i /></div>
+        <div className="sidebar-security"><ShieldCheck size={17} /><span><b>Connected workspace</b><small>Supabase data enabled</small></span><i /></div>
       </aside>
 
       <div className="app-workspace">
@@ -583,8 +579,8 @@ function HospitalWorkspace() {
             <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={19} /><i /></button>
             <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={19} /></button>
-            <button className="profile-button" onClick={() => { if (session) void signOut(); else showNotice("You are using the demo workspace."); }}>
-              <span className="avatar">{getInitials(session ? hospitalSettings.username : "Demo user")}</span><span className="profile-copy"><b>{session ? hospitalSettings.username : "Demo user"}</b><small>{session ? "Sign out" : "Demo mode"}</small></span><ChevronDown size={15} />
+            <button className="profile-button" onClick={() => void signOut()}>
+              <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Sign out</small></span><ChevronDown size={15} />
             </button>
           </div>
         </header>
@@ -604,27 +600,26 @@ function HospitalWorkspace() {
         <main className="main-content">
         <AnimatePresence mode="wait">
           <motion.div key={page} className="page-transition" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
-            {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} />}
+            {page === "Dashboard" && <DashboardPage range={selectedRange} setRange={setSelectedRange} changePage={changePage} orders={orders} patients={patients} />}
             {page === "Patients & EMR" && <PatientDirectory patients={patients} onDeletePatient={deletePatient} onNewAppointment={() => changePage("Take New Appointment")} loading={recordsLoading} error={recordsError} signedIn={Boolean(session)} />}
             {page === "Take New Appointment" && <AppointmentPage onSubmit={addAppointment} saving={appointmentSaving} loading={recordsLoading} error={recordsError} />}
             {page === "Doctor Scheduling" && <AppointmentRecordsPage appointments={appointments} loading={recordsLoading} error={recordsError} changePage={changePage} signedIn={Boolean(session)} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} saving={orderSaving} loading={recordsLoading} signedIn={Boolean(session)} error={recordsError} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} loading={recordsLoading} error={recordsError} />}
-            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn={Boolean(session)} error={settingsError} onSignIn={() => showNotice("Sign-in is not required to use the demo workspace.")} />}
+            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn error={settingsError} onSignIn={() => undefined} />}
             {page === "Database Status" && <DatabaseStatusPage />}
             {!["Dashboard", "Patients & EMR", "Take New Appointment", "Doctor Scheduling", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
         </AnimatePresence>
         </main>
-        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> {session ? "Patient, lab, and appointment records saved to Supabase" : "Demo data only · changes reset on reload"}</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
+        <footer className="footer"><span>© {today.getFullYear()} {hospitalSettings.hospitalName}</span><span><ShieldCheck size={15} /> Patient, lab, and appointment records saved to Supabase</span><button onClick={() => showNotice("Help center is coming soon")}>Help center <CircleHelp size={15} /></button></footer>
       </div>
       <AnimatePresence>{notice && <motion.div className="toast" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }}><span className="toast-check"><Check size={15} /></span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}</AnimatePresence>
     </div>
   );
 }
 
-/*
-function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => void; initialMessage: string }) {
+function AuthScreen({ initialMessage }: { initialMessage: string }) {
   const [mode, setMode] = useState<"sign_in" | "sign_up">("sign_in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -669,11 +664,9 @@ function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => 
       <button className="auth-mode-toggle" type="button" onClick={() => { setMode(mode === "sign_in" ? "sign_up" : "sign_in"); setMessage(""); }}>
         {mode === "sign_in" ? "New here? Create an account" : "Already have an account? Sign in"}
       </button>
-      <button className="button button-outline auth-demo-button" type="button" onClick={onContinueDemo}>Continue in demo mode</button>
     </section>
   </div>;
 }
-*/
 
 function DatabaseStatusPage() {
   const [result, setResult] = useState<Awaited<ReturnType<typeof checkDatabaseConnection>> | null>(null);
@@ -756,17 +749,23 @@ function SectionHeading({ title, subtitle, action }: { title: string; subtitle?:
   return <div className="section-heading"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{action}</div>;
 }
 
-function DashboardPage({ range, setRange, changePage, orders }: { range: string; setRange: (value: string) => void; changePage: (page: Page) => void; orders: LabOrder[] }) {
+function DashboardPage({ range, setRange, changePage, orders, patients }: { range: string; setRange: (value: string) => void; changePage: (page: Page) => void; orders: LabOrder[]; patients: PatientRecord[] }) {
+  const patientsToday = patients.filter((patient) => patient.lastVisit === shortToday).length;
+  const admitted = patients.filter((patient) => patient.status === "Admitted").length;
+  const inTreatment = patients.filter((patient) => patient.status === "In treatment").length;
+  const discharged = patients.filter((patient) => patient.status === "Discharged").length;
+  const collected = orders.filter((order) => order.payment === "Paid").reduce((sum, order) => sum + order.total, 0);
+  const outstanding = orders.filter((order) => order.payment !== "Paid").reduce((sum, order) => sum + order.total, 0);
   return <>
     <div className="dashboard-heading">
       <div><h2>Overview</h2><p>A snapshot of your hospital's performance today.</p></div>
       <button className="button button-outline" onClick={() => window.print()}><Download size={16} /> Export report</button>
     </div>
     <div className="stats-grid">
-      <StatCard title="Patients today" value="248" change="+12.8%" trend="up" icon={<Users size={18} />} color="blue" detail={<><span>Admissions <b>18</b></span><span>In treatment <b>146</b></span><span>Discharged <b>24</b></span></>} action={{ label: "View patient records", onClick: () => changePage("Patients & EMR") }} />
-      <StatCard title="Collection today" value="$12,840" change="+8.2%" trend="up" icon={<Wallet size={18} />} color="purple" detail={<><span>Clinic <b>$8,240</b></span><span>Laboratory <b>$4,600</b></span><span>Total collected <b>$12,840</b></span></>} />
-      <StatCard title="Expense today" value="$4,280" change="-3.1%" trend="down" icon={<Activity size={18} />} color="orange" detail={<><span>This month <b>$86,420</b></span><span>Last month <b>$91,280</b></span><span>Budget used <b>68%</b></span></>} />
-      <StatCard title="Due not collected" value="$2,460" change="12 invoices" trend="neutral" icon={<ClipboardList size={18} />} color="rose" detail={<><span>Over 30 days <b>$640</b></span><span>Due this week <b>$1,180</b></span><span>Open invoices <b>12</b></span></>} />
+      <StatCard title="Patients today" value={String(patientsToday)} change="live" trend="neutral" icon={<Users size={18} />} color="blue" detail={<><span>Admissions <b>{admitted}</b></span><span>In treatment <b>{inTreatment}</b></span><span>Discharged <b>{discharged}</b></span></>} action={{ label: "View patient records", onClick: () => changePage("Patients & EMR") }} />
+      <StatCard title="Collected" value={money(collected)} change={`${orders.filter((order) => order.payment === "Paid").length} invoices`} trend="neutral" icon={<Wallet size={18} />} color="purple" detail={<><span>Lab orders <b>{orders.length}</b></span><span>Paid orders <b>{orders.filter((order) => order.payment === "Paid").length}</b></span><span>Collected <b>{money(collected)}</b></span></>} />
+      <StatCard title="Expense" value={money(0)} change="not connected" trend="neutral" icon={<Activity size={18} />} color="orange" detail={<><span>Expense records <b>0</b></span><span>Tracking <b>Not configured</b></span><span>Source <b>Finance module</b></span></>} />
+      <StatCard title="Due not collected" value={money(outstanding)} change={`${orders.filter((order) => order.payment !== "Paid").length} invoices`} trend="neutral" icon={<ClipboardList size={18} />} color="rose" detail={<><span>Outstanding orders <b>{orders.filter((order) => order.payment !== "Paid").length}</b></span><span>Paid orders <b>{orders.filter((order) => order.payment === "Paid").length}</b></span><span>Outstanding <b>{money(outstanding)}</b></span></>} />
     </div>
     <div className="dashboard-charts">
       <section className="panel chart-panel revenue-panel">
@@ -792,7 +791,7 @@ function DashboardPage({ range, setRange, changePage, orders }: { range: string;
       </section>
       <section className="panel lab-summary-panel">
         <div className="panel-heading"><div><h3>Lab reports today</h3><p>Test results and samples</p></div><button className="text-button" onClick={() => changePage("Lab Order Records")}>View all <ChevronRight size={15} /></button></div>
-        <div className="lab-status-list"><div><span className="status-icon pending"><Clock3 size={15} /></span><span>Pending</span><b>{orders.filter((order) => order.status === "Pending").length + 8}</b></div><div><span className="status-icon collected"><FlaskConical size={15} /></span><span>Sample collected</span><b>{orders.filter((order) => order.status === "Sample Collected").length + 14}</b></div><div><span className="status-icon complete"><Check size={15} /></span><span>Completed</span><b>{orders.filter((order) => order.status === "Completed").length + 32}</b></div></div>
+        <div className="lab-status-list"><div><span className="status-icon pending"><Clock3 size={15} /></span><span>Pending</span><b>{orders.filter((order) => order.status === "Pending").length}</b></div><div><span className="status-icon collected"><FlaskConical size={15} /></span><span>Sample collected</span><b>{orders.filter((order) => order.status === "Sample Collected").length}</b></div><div><span className="status-icon complete"><Check size={15} /></span><span>Completed</span><b>{orders.filter((order) => order.status === "Completed").length}</b></div></div>
         <button className="button button-light full-button" onClick={() => changePage("Take Lab Order")}><Plus size={16} /> Create lab order</button>
       </section>
     </div>
