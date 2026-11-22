@@ -173,8 +173,6 @@ function App() {
 
 function HospitalWorkspace() {
   const [session, setSession] = useState<Session | null>(null);
-  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
-  const [demoMode, setDemoMode] = useState(!isSupabaseConfigured);
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayInput);
@@ -209,19 +207,16 @@ function HospitalWorkspace() {
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, nextSession) => {
       if (!active) return;
       setSession(nextSession);
-      if (nextSession) setDemoMode(false);
     });
 
     void client.auth.getSession().then(({ data, error }) => {
       if (error) throw error;
       if (!active) return;
       setSession(data.session);
-      setAuthLoading(false);
     }).catch((error: unknown) => {
       console.error("Could not restore the Supabase session:", error);
       if (!active) return;
-      setSettingsError("Could not restore your sign-in session. Please sign in again.");
-      setAuthLoading(false);
+      setSettingsError("Could not restore your Supabase session. You can continue in demo mode.");
     });
 
     return () => {
@@ -368,7 +363,6 @@ function HospitalWorkspace() {
     try {
       const { error } = await getSupabaseClient().auth.signOut();
       if (error) throw error;
-      setDemoMode(false);
       showNotice("You have signed out.");
     } catch (error) {
       console.error("Could not sign out of Supabase:", error);
@@ -516,7 +510,8 @@ function HospitalWorkspace() {
   };
   const saveHospitalSettings = async (settings: HospitalSettings) => {
     if (!session) {
-      showNotice("Sign in to save settings to Supabase.");
+      setHospitalSettings(settings);
+      showNotice("Hospital settings saved for this demo session.");
       return;
     }
 
@@ -542,13 +537,6 @@ function HospitalWorkspace() {
       setSettingsSaving(false);
     }
   };
-
-  if (authLoading) {
-    return <div className="auth-screen"><section className="panel auth-panel"><RefreshCw className="spin" size={22} /><p>Checking your Supabase sign-in…</p></section></div>;
-  }
-  if (isSupabaseConfigured && !session && !demoMode) {
-    return <AuthScreen onContinueDemo={() => { setDemoMode(true); setSettingsError(""); }} initialMessage={settingsError} />;
-  }
 
   return (
     <div className={`app-shell${dark ? " dark" : ""}`}>
@@ -595,8 +583,8 @@ function HospitalWorkspace() {
             <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={19} /><i /></button>
             <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={19} /></button>
-            <button className="profile-button" onClick={() => { if (session) void signOut(); else setDemoMode(false); }}>
-              <span className="avatar">{getInitials(session ? hospitalSettings.username : "Demo user")}</span><span className="profile-copy"><b>{session ? hospitalSettings.username : "Demo user"}</b><small>{session ? "Sign out" : isSupabaseConfigured ? "Sign in to save" : "Demo mode"}</small></span><ChevronDown size={15} />
+            <button className="profile-button" onClick={() => { if (session) void signOut(); else showNotice("You are using the demo workspace."); }}>
+              <span className="avatar">{getInitials(session ? hospitalSettings.username : "Demo user")}</span><span className="profile-copy"><b>{session ? hospitalSettings.username : "Demo user"}</b><small>{session ? "Sign out" : "Demo mode"}</small></span><ChevronDown size={15} />
             </button>
           </div>
         </header>
@@ -622,7 +610,7 @@ function HospitalWorkspace() {
             {page === "Doctor Scheduling" && <AppointmentRecordsPage appointments={appointments} loading={recordsLoading} error={recordsError} changePage={changePage} signedIn={Boolean(session)} />}
             {page === "Take Lab Order" && <LabOrderPage onSubmit={addOrder} saving={orderSaving} loading={recordsLoading} signedIn={Boolean(session)} error={recordsError} />}
             {page === "Lab Order Records" && <LabRecordsPage orders={orders} onUpdateOrder={updateOrder} search={search} setSearch={setSearch} showNotice={showNotice} changePage={changePage} loading={recordsLoading} error={recordsError} />}
-            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn={Boolean(session)} error={settingsError} onSignIn={() => setDemoMode(false)} />}
+            {page === "Master Data" && <HospitalSettingsPage settings={hospitalSettings} onSave={saveHospitalSettings} showNotice={showNotice} saving={settingsSaving} loading={settingsLoading} signedIn={Boolean(session)} error={settingsError} onSignIn={() => showNotice("Sign-in is not required to use the demo workspace.")} />}
             {page === "Database Status" && <DatabaseStatusPage />}
             {!["Dashboard", "Patients & EMR", "Take New Appointment", "Doctor Scheduling", "Take Lab Order", "Lab Order Records", "Master Data", "Database Status"].includes(page) && <ModulePage page={page} changePage={changePage} showNotice={showNotice} />}
           </motion.div>
@@ -635,6 +623,7 @@ function HospitalWorkspace() {
   );
 }
 
+/*
 function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => void; initialMessage: string }) {
   const [mode, setMode] = useState<"sign_in" | "sign_up">("sign_in");
   const [email, setEmail] = useState("");
@@ -684,6 +673,7 @@ function AuthScreen({ onContinueDemo, initialMessage }: { onContinueDemo: () => 
     </section>
   </div>;
 }
+*/
 
 function DatabaseStatusPage() {
   const [result, setResult] = useState<Awaited<ReturnType<typeof checkDatabaseConnection>> | null>(null);
