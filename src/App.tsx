@@ -623,7 +623,7 @@ function HospitalWorkspace() {
 
 function AuthScreen({ initialMessage }: { initialMessage: string }) {
   const [mode, setMode] = useState<"sign_in" | "sign_up">("sign_in");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState("danialrenson@gmail.com");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState(initialMessage);
   const [busy, setBusy] = useState(false);
@@ -650,7 +650,10 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
       }
     } catch (error) {
       console.error("Supabase authentication failed:", error);
-      setMessage(error instanceof Error ? error.message : "Could not sign in. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Could not sign in. Please try again.";
+      setMessage(mode === "sign_in" && errorMessage.toLowerCase().includes("invalid login credentials")
+        ? "No account matches these credentials. If this is your first sign-in, choose “Create an account” below; otherwise check the password."
+        : errorMessage);
     } finally {
       setBusy(false);
     }
