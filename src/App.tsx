@@ -28,7 +28,7 @@ type HospitalSettings = {
 
 const defaultHospitalSettings: HospitalSettings = {
   hospitalName: "Careflow Hospital",
-  username: "Alex Morgan",
+  username: "danialrenson@gmail.com",
   logoDataUrl: "",
 };
 
@@ -325,6 +325,11 @@ function HospitalWorkspace() {
             hospitalName: data.hospital_name,
             username: data.username,
             logoDataUrl: data.logo_data_url,
+          });
+        } else if (active) {
+          setHospitalSettings({
+            ...defaultHospitalSettings,
+            username: session?.user.email || defaultHospitalSettings.username,
           });
         }
       } catch (error) {
@@ -630,7 +635,11 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
     try {
       const client = getSupabaseClient();
       if (mode === "sign_up") {
-        const { data, error } = await client.auth.signUp({ email: email.trim(), password });
+        const { data, error } = await client.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { username: email.trim() } },
+        });
         if (error) throw error;
         if (!data.session) {
           setMessage("Account created. Check your email to confirm the account, then sign in.");
