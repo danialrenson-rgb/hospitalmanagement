@@ -152,6 +152,7 @@ function HospitalWorkspace() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
   const [authError, setAuthError] = useState("");
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayInput);
@@ -183,8 +184,9 @@ function HospitalWorkspace() {
 
     let active = true;
     const client = getSupabaseClient();
-    const { data: { subscription } } = client.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
       setSession(nextSession);
     });
 
@@ -351,6 +353,10 @@ function HospitalWorkspace() {
 
   if (!authReady) {
     return <div className="app-shell dark auth-screen"><div className="panel auth-panel"><RefreshCw className="spin" size={24} /><p className="auth-description">Loading your secure workspace…</p></div></div>;
+  }
+
+  if (passwordRecovery && session) {
+    return <PasswordRecoveryScreen onComplete={() => setPasswordRecovery(false)} />;
   }
 
   if (!session) {
@@ -628,6 +634,21 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
   const [message, setMessage] = useState(initialMessage);
   const [busy, setBusy] = useState(false);
 
+  const requestPasswordReset = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const { error } = await getSupabaseClient().auth.resetPasswordForEmail(email.trim());
+      if (error) throw error;
+      setMessage("If an account exists for this email, a password reset link is on its way.");
+    } catch (error) {
+      console.error("Could not request a password reset:", error);
+      setMessage(error instanceof Error ? error.message : "Could not request a password reset. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -670,9 +691,53 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
         {message && <p className="auth-message" role="alert">{message}</p>}
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "sign_in" ? "Sign in" : "Create account"}</button>
       </form>
+      {isSupabaseConfigured && mode === "sign_in" && <button className="auth-mode-toggle" type="button" disabled={busy} onClick={() => void requestPasswordReset()}>Forgot password?</button>}
       <button className="auth-mode-toggle" type="button" onClick={() => { setMode(mode === "sign_in" ? "sign_up" : "sign_in"); setMessage(""); }}>
         {mode === "sign_in" ? "New here? Create an account" : "Already have an account? Sign in"}
       </button>
+    </section>
+  </div>;
+}
+
+function PasswordRecoveryScreen({ onComplete }: { onComplete: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [updated, setUpdated] = useState(false);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+    try {
+      const { error } = await getSupabaseClient().auth.updateUser({ password });
+      if (error) throw error;
+      setUpdated(true);
+    } catch (error) {
+      console.error("Could not update the account password:", error);
+      setMessage(error instanceof Error ? error.message : "Could not update the password. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="app-shell dark auth-screen">
+    <section className="panel auth-panel">
+      <div className="auth-brand"><span className="brand-mark"><Activity size={20} /></span><span>Careflow Hospital</span></div>
+      <h1>Set a new password</h1>
+      <p className="auth-description">Choose a new password for your administrator account.</p>
+      {updated ? <><p className="auth-message">Your password has been updated.</p><button className="button button-primary" type="button" onClick={onComplete}>Continue to workspace</button></> : <form className="auth-form" onSubmit={(event) => void submit(event)}>
+        <label className="settings-field"><span>New password</span><input type="password" autoComplete="new-password" minLength={6} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 6 characters" /></label>
+        <label className="settings-field"><span>Confirm new password</span><input type="password" autoComplete="new-password" minLength={6} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Re-enter your new password" /></label>
+        {message && <p className="auth-message" role="alert">{message}</p>}
+        <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Please wait…" : "Update password"}</button>
+      </form>}
     </section>
   </div>;
 }
