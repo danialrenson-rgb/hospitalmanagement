@@ -104,11 +104,8 @@ const navigation: { name: string; icon: typeof LayoutDashboard; items?: Page[] }
   { name: "Patients & EMR", icon: Users },
   { name: "Outdoor (OPD)", icon: CalendarDays, items: ["Take New Appointment", "Doctor Scheduling"] },
   { name: "Lab Module", icon: FlaskConical, items: ["Take Lab Order", "Lab Order Records"] },
-  { name: "Prescription", icon: ClipboardList },
-  { name: "App Users", icon: Users },
   { name: "Master Data", icon: Settings },
   { name: "Database Status", icon: Database },
-  { name: "More", icon: MoreHorizontal, items: ["IPD & Bed Management", "Billing & Invoicing", "Pharmacy & Inventory", "Reports & Analytics", "Emergency & Casualty", "Radiology & Imaging", "Operation Theatre", "Nurse Station", "Blood Bank", "Ambulance & Transport", "HR & Payroll", "Accounts & Finance", "Notifications", "Patient Portal", "Queue Display", "Audit & Security", "Branches & Languages"] },
 ];
 
 const revenueData = [
