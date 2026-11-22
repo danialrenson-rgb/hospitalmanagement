@@ -633,10 +633,12 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState(initialMessage);
   const [busy, setBusy] = useState(false);
+  const [canResendConfirmation, setCanResendConfirmation] = useState(false);
 
   const requestPasswordReset = async () => {
     setBusy(true);
     setMessage("");
+    setCanResendConfirmation(false);
     try {
       const { error } = await getSupabaseClient().auth.resetPasswordForEmail(email.trim());
       if (error) throw error;
@@ -649,10 +651,27 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
     }
   };
 
+  const resendConfirmation = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const { error } = await getSupabaseClient().auth.resend({ type: "signup", email: email.trim() });
+      if (error) throw error;
+      setCanResendConfirmation(false);
+      setMessage("Confirmation email requested. Check your inbox and spam folder.");
+    } catch (error) {
+      console.error("Could not resend the confirmation email:", error);
+      setMessage(error instanceof Error ? error.message : "Could not resend the confirmation email. Please try again later.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setMessage("");
+    setCanResendConfirmation(false);
     try {
       const client = getSupabaseClient();
       if (mode === "sign_up") {
@@ -672,9 +691,15 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
     } catch (error) {
       console.error("Supabase authentication failed:", error);
       const errorMessage = error instanceof Error ? error.message : "Could not sign in. Please try again.";
-      setMessage(mode === "sign_in" && errorMessage.toLowerCase().includes("invalid login credentials")
-        ? "No account matches these credentials. If this is your first sign-in, choose “Create an account” below; otherwise check the password."
-        : errorMessage);
+      const normalizedError = errorMessage.toLowerCase();
+      if (mode === "sign_in" && normalizedError.includes("email not confirmed")) {
+        setCanResendConfirmation(true);
+        setMessage("Confirm your email before signing in. Check your inbox and spam folder.");
+      } else {
+        setMessage(mode === "sign_in" && normalizedError.includes("invalid login credentials")
+          ? "Email or password is incorrect. Check your details or use “Forgot password?” to reset the password."
+          : errorMessage);
+      }
     } finally {
       setBusy(false);
     }
@@ -691,6 +716,7 @@ function AuthScreen({ initialMessage }: { initialMessage: string }) {
         {message && <p className="auth-message" role="alert">{message}</p>}
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "sign_in" ? "Sign in" : "Create account"}</button>
       </form>
+      {canResendConfirmation && <button className="auth-mode-toggle" type="button" disabled={busy} onClick={() => void resendConfirmation()}>Resend confirmation email</button>}
       {isSupabaseConfigured && mode === "sign_in" && <button className="auth-mode-toggle" type="button" disabled={busy} onClick={() => void requestPasswordReset()}>Forgot password?</button>}
       <button className="auth-mode-toggle" type="button" onClick={() => { setMode(mode === "sign_in" ? "sign_up" : "sign_in"); setMessage(""); }}>
         {mode === "sign_in" ? "New here? Create an account" : "Already have an account? Sign in"}
