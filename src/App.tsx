@@ -11,7 +11,6 @@ import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
-import type { Session } from "@supabase/supabase-js";
 import type { Json } from "./database.types";
 import { checkDatabaseConnection, getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -149,10 +148,6 @@ function App() {
 }
 
 function HospitalWorkspace() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
-  const [authError, setAuthError] = useState("");
-  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [page, setPage] = useState<Page>("Dashboard");
   const [dark, setDark] = useState(true);
   const [selectedDate, setSelectedDate] = useState(todayInput);
@@ -180,37 +175,7 @@ function HospitalWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-
-    let active = true;
-    const client = getSupabaseClient();
-    const { data: { subscription } } = client.auth.onAuthStateChange((event, nextSession) => {
-      if (!active) return;
-      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      setSession(nextSession);
-    });
-
-    void client.auth.getSession().then(({ data, error }) => {
-      if (error) throw error;
-      if (!active) return;
-      setSession(data.session);
-      setAuthReady(true);
-    }).catch((error: unknown) => {
-      console.error("Could not restore the Supabase session:", error);
-      if (!active) return;
-      setAuthError("Could not restore your session. Check your connection and try again.");
-      setAuthReady(true);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const userId = session?.user.id;
-  useEffect(() => {
-    if (!userId) {
+    if (!isSupabaseConfigured) {
       setPatients([]);
       setOrders([]);
       setAppointments([]);
@@ -301,10 +266,10 @@ function HospitalWorkspace() {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
-    if (!userId) {
+    if (!isSupabaseConfigured) {
       setHospitalSettings(defaultHospitalSettings);
       setSettingsLoading(false);
       setSettingsError("");
@@ -319,7 +284,8 @@ function HospitalWorkspace() {
         const { data, error } = await getSupabaseClient()
           .from("hospital_settings")
           .select("hospital_name, username, logo_data_url")
-          .eq("user_id", userId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
         if (error) throw error;
         if (active && data) {
@@ -331,7 +297,7 @@ function HospitalWorkspace() {
         } else if (active) {
           setHospitalSettings({
             ...defaultHospitalSettings,
-            username: session?.user.email || defaultHospitalSettings.username,
+            username: defaultHospitalSettings.username,
           });
         }
       } catch (error) {
@@ -345,34 +311,7 @@ function HospitalWorkspace() {
     return () => {
       active = false;
     };
-  }, [userId]);
-
-  if (!isSupabaseConfigured) {
-    return <AuthScreen initialMessage="This deployment is not connected to Supabase. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild." />;
-  }
-
-  if (!authReady) {
-    return <div className="app-shell dark auth-screen"><div className="panel auth-panel"><RefreshCw className="spin" size={24} /><p className="auth-description">Loading your secure workspace…</p></div></div>;
-  }
-
-  if (passwordRecovery && session) {
-    return <PasswordRecoveryScreen onComplete={() => setPasswordRecovery(false)} />;
-  }
-
-  if (!session) {
-    return <AuthScreen initialMessage={authError} />;
-  }
-
-  const signOut = async () => {
-    try {
-      const { error } = await getSupabaseClient().auth.signOut();
-      if (error) throw error;
-      showNotice("You have signed out.");
-    } catch (error) {
-      console.error("Could not sign out of Supabase:", error);
-      showNotice("Could not sign out. Please try again.");
-    }
-  };
+  }, []);
   const changePage = (next: Page) => {
     setPage(next);
     setOpenMenu(null);
@@ -383,9 +322,8 @@ function HospitalWorkspace() {
     setOrderSaving(true);
     setRecordsError("");
     try {
-      if (session) {
+      if (isSupabaseConfigured) {
         const { error } = await getSupabaseClient().from("lab_orders").insert({
-          owner_id: session.user.id,
           invoice: order.invoice,
           date: order.date,
           patient: order.patient,
@@ -415,11 +353,10 @@ function HospitalWorkspace() {
     setAppointmentSaving(true);
     setRecordsError("");
     try {
-      if (session) {
+      if (isSupabaseConfigured) {
         const { data, error } = await getSupabaseClient()
           .from("appointments")
           .insert({
-            owner_id: session.user.id,
             patient_name: appointment.patientName,
             phone: appointment.phone,
             age_years: appointment.ageYears,
@@ -467,7 +404,7 @@ function HospitalWorkspace() {
     const updatedOrder = field === "payment"
       ? { ...currentOrder, payment: "Paid" as const }
       : { ...currentOrder, status: currentOrder.status === "Pending" ? "Sample Collected" as const : "Completed" as const };
-    if (session) {
+    if (isSupabaseConfigured) {
       try {
         const { data, error } = await getSupabaseClient()
           .from("lab_orders")
@@ -485,13 +422,13 @@ function HospitalWorkspace() {
       }
     }
     setOrders((current) => current.map((order) => order.invoice === invoice ? updatedOrder : order));
-    if (!session) showNotice("Order updated for this session.");
+    if (!isSupabaseConfigured) showNotice("Order updated for this session.");
     return true;
   };
   const deletePatient = async (patientId: string) => {
     const patient = patients.find((record) => record.id === patientId);
     if (!patient) return false;
-    if (session) {
+    if (isSupabaseConfigured) {
       try {
         const { data, error } = await getSupabaseClient()
           .from("patients")
@@ -509,11 +446,11 @@ function HospitalWorkspace() {
       }
     }
     setPatients((current) => current.filter((record) => record.id !== patientId));
-    showNotice(session ? `${patient.name} was deleted from Supabase.` : `${patient.name} was removed for this session.`);
+    showNotice(`${patient.name} was deleted from Supabase.`);
     return true;
   };
   const saveHospitalSettings = async (settings: HospitalSettings) => {
-    if (!session) {
+    if (!isSupabaseConfigured) {
       setHospitalSettings(settings);
       showNotice("Hospital settings saved for this session.");
       return;
@@ -525,7 +462,7 @@ function HospitalWorkspace() {
       const { error } = await getSupabaseClient()
         .from("hospital_settings")
         .upsert({
-          user_id: session.user.id,
+          user_id: "00000000-0000-0000-0000-000000000000",
           hospital_name: settings.hospitalName,
           username: settings.username,
           logo_data_url: settings.logoDataUrl,
@@ -587,8 +524,8 @@ function HospitalWorkspace() {
             <button className="icon-button theme-toggle" aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button>
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => showNotice("You're all caught up on notifications")}><Bell size={19} /><i /></button>
             <button className="icon-button" aria-label="Settings" onClick={() => changePage("Master Data")}><Settings size={19} /></button>
-            <button className="profile-button" onClick={() => void signOut()}>
-              <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Sign out</small></span><ChevronDown size={15} />
+            <button className="profile-button" onClick={() => changePage("Master Data")}>
+              <span className="avatar">{getInitials(hospitalSettings.username)}</span><span className="profile-copy"><b>{hospitalSettings.username}</b><small>Workspace</small></span><ChevronDown size={15} />
             </button>
           </div>
         </header>
